@@ -67,3 +67,20 @@ class RawDocument(BaseModel):
     text: str
 
     metadata: dict = Field(default_factory=dict)
+
+
+class RawDocumentPage(BaseModel):
+    page_number: int
+    text: str
+
+
+class RawDocument(BaseModel):
+    document_id: str
+    document_type: str
+    source_path: str
+
+    pages: list[RawDocumentPage] = Field(default_factory=list)
+
+    raw_text: str
+
+    metadata: dict = Field(default_factory=dict)
