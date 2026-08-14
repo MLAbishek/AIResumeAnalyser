@@ -1,16 +1,10 @@
 from pathlib import Path
 
-from docx import Document
-
-from app.core.schemas import (
-    DocumentType,
-    RawDocument,
-    RawDocumentPage,
-)
+from app.core.schemas import DocumentType, RawDocument, RawDocumentPage
 from app.core.document_manager import DocumentManager
 
 
-class DOCXLoader:
+class TXTLoader:
     def __init__(self):
         self.document_manager = DocumentManager()
 
@@ -23,24 +17,24 @@ class DOCXLoader:
         path = Path(file_path)
 
         # 1. Validate extension
-        if path.suffix.lower() != ".docx":
+        if path.suffix.lower() != ".txt":
             raise ValueError(
-                f"Expected a .docx file, got: {path.suffix}"
+                f"Expected a .txt file, got: {path.suffix}"
             )
 
         # 2. Check existence
         if not path.exists():
             raise FileNotFoundError(
-                f"DOCX file not found: {file_path}"
+                f"TXT file not found: {file_path}"
             )
 
         # 3. Require document type
         if document_type is None:
             raise ValueError(
-                "document_type is required for a valid DOCX document"
+                "document_type is required for a valid TXT document"
             )
 
-        # 4. Generate document ID + metadata
+        # 4. Generate metadata and document ID
         if document_id is None:
             document_id, metadata = (
                 self.document_manager.create_document_metadata(
@@ -52,35 +46,25 @@ class DOCXLoader:
                 file_path
             )
 
-        # 5. Open DOCX
-        document = Document(path)
+        # 5. Read text
+        text = path.read_text(encoding="utf-8")
 
-        # 6. Extract paragraphs
-        paragraphs = []
-
-        for paragraph in document.paragraphs:
-            text = paragraph.text.strip()
-
-            if text:
-                paragraphs.append(text)
-
-        # 7. Combine extracted text
-        text = "\n".join(paragraphs)
-
-        # 8. Represent DOCX as one logical page
+        # 6. Create canonical page representation
         pages = [
             RawDocumentPage(
                 page_number=1,
-                text=text,
+                text=text.strip(),
             )
         ]
 
-        # 9. Return canonical RawDocument
+        # 7. Return RawDocument
         return RawDocument(
             document_id=document_id,
             document_type=document_type,
             source_path=str(path),
             pages=pages,
-            raw_text=text,
+            raw_text="\n\n".join(
+                page.text for page in pages
+            ),
             metadata=metadata,
         )

@@ -4,8 +4,8 @@ from app.ingestion.pdf_loader import PDFLoader
 loader = PDFLoader()
 
 document = loader.load(
-    "data/raw/jd/jd001.pdf",
-    document_id="JD_001"
+    "data/raw/resumes/resume_001.pdf",
+    document_id="RES_001"
 )
 
 print("=" * 80)

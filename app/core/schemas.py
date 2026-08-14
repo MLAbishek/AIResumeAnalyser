@@ -1,6 +1,18 @@
 from pydantic import BaseModel, Field
 from typing import Optional
+from enum import Enum
 
+class DocumentType(str, Enum):
+    RESUME = "resume"
+    JOB_DESCRIPTION = "job_description"
+    
+class DocumentMetadata(BaseModel):
+    file_name: Optional[str] = None
+    file_size: Optional[int] = None
+    content_type: Optional[str] = None
+    checksum: Optional[str] = None
+    created_at: Optional[str] = None
+    modified_at: Optional[str] = None
 
 class JobDescription(BaseModel):
     job_id: str
@@ -59,15 +71,6 @@ class Resume(BaseModel):
 
     raw_text: str
 
-class RawDocument(BaseModel):
-    document_id: str
-    document_type: str
-    source_path: str
-
-    text: str
-
-    metadata: dict = Field(default_factory=dict)
-
 
 class RawDocumentPage(BaseModel):
     page_number: int
@@ -76,11 +79,28 @@ class RawDocumentPage(BaseModel):
 
 class RawDocument(BaseModel):
     document_id: str
-    document_type: str
+    document_type: DocumentType
     source_path: str
 
     pages: list[RawDocumentPage] = Field(default_factory=list)
 
     raw_text: str
+
+    metadata: DocumentMetadata = Field(default_factory=DocumentMetadata)
+
+
+class CleanedDocumentPage(BaseModel):
+    page_number: int
+    text: str
+
+
+class CleanedDocument(BaseModel):
+    document_id: str
+    document_type: DocumentType
+    source_path: str
+
+    pages: list[CleanedDocumentPage] = Field(default_factory=list)
+
+    text: str
 
     metadata: dict = Field(default_factory=dict)
