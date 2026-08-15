@@ -222,3 +222,44 @@ class CanonicalJob(BaseModel):
     education: list[CanonicalJobEducationRequirement] = Field(
         default_factory=list
     )
+
+class DocumentSection(BaseModel):
+    name: str
+    text: str
+    start_line: Optional[int] = None
+    end_line: Optional[int] = None
+
+
+class SectionedDocument(BaseModel):
+    document_id: str
+    document_type: DocumentType
+
+    sections: list[DocumentSection] = Field(
+        default_factory=list
+    )
+
+    raw_text: str
+
+class EntityType(str, Enum):
+    SKILL = "skill"
+    TECHNOLOGY = "technology"
+    COMPANY = "company"
+    DEGREE = "degree"
+    CERTIFICATION = "certification"
+    JOB_TITLE = "job_title"
+    DATE = "date"
+
+
+class ExtractedEntity(BaseModel):
+    entity_type: EntityType
+    text: str
+    section: Optional[str] = None
+    start: Optional[int] = None
+    end: Optional[int] = None
+
+
+class ExtractedEntities(BaseModel):
+    document_id: str
+    entities: list[ExtractedEntity] = Field(
+        default_factory=list
+    )
