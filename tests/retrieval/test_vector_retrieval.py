@@ -138,17 +138,44 @@ def test_empty_vector_is_rejected():
         )
 
 
+def test_build_index_creates_faiss_index():
+    embeddings = make_embeddings()
+
+    retriever = VectorRetriever()
+
+    retriever.build_index(
+        embeddings
+    )
+
+    assert retriever.is_built
+    assert retriever.dimension == 3
+
+
+def test_empty_embeddings_create_empty_index():
+    retriever = VectorRetriever()
+
+    retriever.build_index([])
+
+    assert not retriever.is_built
+    assert retriever.dimension is None
+
+
 def test_score_chunks_ranks_similar_chunks_first():
     embeddings = make_embeddings()
+
+    retriever = VectorRetriever()
+
+    retriever.build_index(
+        embeddings
+    )
 
     query = np.array(
         [1.0, 0.0, 0.0],
         dtype=np.float32,
     )
 
-    results = VectorRetriever().score_chunks(
+    results = retriever.score_chunks(
         query,
-        embeddings,
     )
 
     assert results[0].chunk_id == "a-1"
@@ -156,6 +183,28 @@ def test_score_chunks_ranks_similar_chunks_first():
 
 
 def test_retrieve_returns_most_similar_candidate():
+    embeddings = make_embeddings()
+
+    retriever = VectorRetriever()
+
+    retriever.build_index(
+        embeddings
+    )
+
+    query = np.array(
+        [1.0, 0.0, 0.0],
+        dtype=np.float32,
+    )
+
+    results = retriever.retrieve(
+        query,
+        top_k=3,
+    )
+
+    assert results[0].resume_id == "candidate-a"
+
+
+def test_retrieve_can_build_index_for_compatibility():
     embeddings = make_embeddings()
 
     query = np.array(
@@ -169,20 +218,26 @@ def test_retrieve_returns_most_similar_candidate():
         top_k=3,
     )
 
+    assert results
     assert results[0].resume_id == "candidate-a"
 
 
 def test_top_k_limits_results():
     embeddings = make_embeddings()
 
+    retriever = VectorRetriever()
+
+    retriever.build_index(
+        embeddings
+    )
+
     query = np.array(
         [1.0, 0.0, 0.0],
         dtype=np.float32,
     )
 
-    results = VectorRetriever().retrieve(
+    results = retriever.retrieve(
         query,
-        embeddings,
         top_k=1,
     )
 
@@ -192,15 +247,20 @@ def test_top_k_limits_results():
 def test_top_k_zero_returns_empty():
     embeddings = make_embeddings()
 
+    retriever = VectorRetriever()
+
+    retriever.build_index(
+        embeddings
+    )
+
     query = np.array(
         [1.0, 0.0, 0.0],
         dtype=np.float32,
     )
 
     assert (
-        VectorRetriever().retrieve(
+        retriever.retrieve(
             query,
-            embeddings,
             top_k=0,
         )
         == []
@@ -216,7 +276,6 @@ def test_empty_index_returns_empty():
     assert (
         VectorRetriever().retrieve(
             query,
-            [],
             top_k=10,
         )
         == []
@@ -226,16 +285,21 @@ def test_empty_index_returns_empty():
 def test_candidate_max_aggregation():
     embeddings = make_embeddings()
 
+    retriever = VectorRetriever(
+        aggregation="max"
+    )
+
+    retriever.build_index(
+        embeddings
+    )
+
     query = np.array(
         [1.0, 0.0, 0.0],
         dtype=np.float32,
     )
 
-    results = VectorRetriever(
-        aggregation="max"
-    ).retrieve(
+    results = retriever.retrieve(
         query,
-        embeddings,
         top_k=3,
     )
 
@@ -254,16 +318,21 @@ def test_candidate_max_aggregation():
 def test_candidate_sum_aggregation():
     embeddings = make_embeddings()
 
+    retriever = VectorRetriever(
+        aggregation="sum"
+    )
+
+    retriever.build_index(
+        embeddings
+    )
+
     query = np.array(
         [1.0, 0.0, 0.0],
         dtype=np.float32,
     )
 
-    results = VectorRetriever(
-        aggregation="sum"
-    ).retrieve(
+    results = retriever.retrieve(
         query,
-        embeddings,
         top_k=3,
     )
 
@@ -279,16 +348,21 @@ def test_candidate_sum_aggregation():
 def test_candidate_mean_aggregation():
     embeddings = make_embeddings()
 
+    retriever = VectorRetriever(
+        aggregation="mean"
+    )
+
+    retriever.build_index(
+        embeddings
+    )
+
     query = np.array(
         [1.0, 0.0, 0.0],
         dtype=np.float32,
     )
 
-    results = VectorRetriever(
-        aggregation="mean"
-    ).retrieve(
+    results = retriever.retrieve(
         query,
-        embeddings,
         top_k=3,
     )
 
@@ -311,10 +385,15 @@ def test_invalid_aggregation_is_rejected():
 def test_invalid_top_k_is_rejected():
     embeddings = make_embeddings()
 
+    retriever = VectorRetriever()
+
+    retriever.build_index(
+        embeddings
+    )
+
     with pytest.raises(ValueError):
-        VectorRetriever().retrieve(
+        retriever.retrieve(
             np.array([1.0, 0.0, 0.0]),
-            embeddings,
             top_k=-1,
         )
 
@@ -322,10 +401,15 @@ def test_invalid_top_k_is_rejected():
 def test_invalid_min_score_is_rejected():
     embeddings = make_embeddings()
 
+    retriever = VectorRetriever()
+
+    retriever.build_index(
+        embeddings
+    )
+
     with pytest.raises(ValueError):
-        VectorRetriever().retrieve(
+        retriever.retrieve(
             np.array([1.0, 0.0, 0.0]),
-            embeddings,
             min_score=2.0,
         )
 
@@ -333,14 +417,19 @@ def test_invalid_min_score_is_rejected():
 def test_min_score_filters_chunks():
     embeddings = make_embeddings()
 
+    retriever = VectorRetriever()
+
+    retriever.build_index(
+        embeddings
+    )
+
     query = np.array(
         [1.0, 0.0, 0.0],
         dtype=np.float32,
     )
 
-    results = VectorRetriever().retrieve(
+    results = retriever.retrieve(
         query,
-        embeddings,
         top_k=10,
         min_score=0.8,
     )
@@ -354,14 +443,19 @@ def test_min_score_filters_chunks():
 def test_matched_chunks_belong_to_candidate():
     embeddings = make_embeddings()
 
+    retriever = VectorRetriever()
+
+    retriever.build_index(
+        embeddings
+    )
+
     query = np.array(
         [1.0, 0.0, 0.0],
         dtype=np.float32,
     )
 
-    results = VectorRetriever().retrieve(
+    results = retriever.retrieve(
         query,
-        embeddings,
         top_k=10,
     )
 
@@ -382,15 +476,17 @@ def test_results_are_deterministic():
 
     retriever = VectorRetriever()
 
+    retriever.build_index(
+        embeddings
+    )
+
     first = retriever.retrieve(
         query,
-        embeddings,
         top_k=10,
     )
 
     second = retriever.retrieve(
         query,
-        embeddings,
         top_k=10,
     )
 

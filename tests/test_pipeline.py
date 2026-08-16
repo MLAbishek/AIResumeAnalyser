@@ -25,4 +25,5 @@ def test_pipeline_initialization():
 
     assert result["job_id"] == "JD_001"
     assert result["total_candidates"] == 1
-    assert result["status"] == "pipeline_initialized"
+    assert result["status"] == "completed"
+    assert len(result["results"]) == 1

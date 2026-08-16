@@ -15,7 +15,18 @@ class Settings(BaseSettings):
     processed_data_dir: Path = Path("data/processed")
     normalized_data_dir: Path = Path("data/normalized")
     evaluation_data_dir: Path = Path("data/evaluation")
-
+    
+    #Database
+    database_url : str
+    
+    # Authentication
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = Field(
+        default=60,
+        ge=1,
+    )
+    
     # Models
     embedding_model: str = ""
     llm_model: str = ""

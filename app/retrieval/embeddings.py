@@ -15,12 +15,13 @@ import numpy as np
 from app.retrieval.resume_chunker import ResumeChunk
 
 
-DEFAULT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_MODEL_NAME = "BAAI/bge-m3"
+DEFAULT_EMBEDDING_DIMENSION = 1024
 
 
 @dataclass(frozen=True)
 class ChunkEmbedding:
-    """
+    """     
     Embedding associated with one resume chunk.
     """
 
@@ -172,12 +173,18 @@ class EmbeddingGenerator:
             )
             for chunk, vector in zip(chunks, vectors)
         ]
-
+        
     def embedding_dimension(self) -> int:
         """
         Return the dimensionality of the configured embedding model.
         """
         model = self.model
+
+        if hasattr(model, "get_embedding_dimension"):
+            dimension = model.get_embedding_dimension()
+
+            if dimension is not None:
+                return int(dimension)
 
         if hasattr(model, "get_sentence_embedding_dimension"):
             dimension = model.get_sentence_embedding_dimension()

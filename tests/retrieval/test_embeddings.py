@@ -84,7 +84,7 @@ def make_chunk(
 
 def test_default_model_name_is_defined():
     assert DEFAULT_MODEL_NAME == (
-        "sentence-transformers/all-MiniLM-L6-v2"
+        "BAAI/bge-m3"
     )
 
 
