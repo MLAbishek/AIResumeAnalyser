@@ -1,8 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { useEffect } from "react";
-import { checkHealth } from "./api";
 import JobsPage from "./pages/JobsPage";
-import LoginPage from "./pages/LoginPage";
+import ResumesPage from "./pages/ResumesPage";
 
 function HomePage() {
   return (
@@ -23,21 +21,11 @@ function NotFoundPage() {
 }
 
 export default function App() {
-  useEffect(() => {
-    checkHealth()
-      .then((data) => {
-        console.log("Backend health:", data);
-      })
-      .catch((error) => {
-        console.error("Backend health check failed:", error);
-      });
-  }, []);
-
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
-      <Route path="/login" element={<LoginPage />} />
       <Route path="/jobs" element={<JobsPage />} />
+      <Route path="/resumes" element={<ResumesPage />} />
       <Route path="/404" element={<NotFoundPage />} />
       <Route path="*" element={<Navigate to="/404" replace />} />
     </Routes>
