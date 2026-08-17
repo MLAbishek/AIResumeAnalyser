@@ -161,12 +161,18 @@ def check_education_certification(
 
 def check_location(
     candidate_location,
-    criteria: EligibilityCriteria
+    criteria: EligibilityCriteria,
 ):
     required_location = criteria.location
 
     if not required_location:
         return True, "No location requirement specified."
+
+    if not candidate_location:
+        return (
+            False,
+            "Candidate location is unavailable.",
+        )
 
     location_match = (
         candidate_location.lower().strip()

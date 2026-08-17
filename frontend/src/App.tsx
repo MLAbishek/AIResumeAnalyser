@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import JobsPage from "./pages/JobsPage";
 import ResumesPage from "./pages/ResumesPage";
+import ScreeningPage from "./pages/ScreeningPage";
 
 function HomePage() {
   return (
@@ -26,6 +27,10 @@ export default function App() {
       <Route path="/" element={<HomePage />} />
       <Route path="/jobs" element={<JobsPage />} />
       <Route path="/resumes" element={<ResumesPage />} />
+      <Route
+        path="/screening"
+        element={<ScreeningPage />}
+        />
       <Route path="/404" element={<NotFoundPage />} />
       <Route path="*" element={<Navigate to="/404" replace />} />
     </Routes>

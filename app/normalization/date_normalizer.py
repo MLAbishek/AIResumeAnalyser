@@ -63,16 +63,37 @@ class DateDurationNormalizer:
         value: str,
     ) -> date:
         """
-        Convert month/year expressions into the first day
-        of the corresponding month.
+        Normalize supported date formats to a date.
 
-        Examples:
+        Supported examples:
             January 2020 -> 2020-01-01
             Jan 2020     -> 2020-01-01
             01/2020      -> 2020-01-01
+            2020         -> 2020-01-01
+            2022-01-01   -> 2022-01-01
         """
 
         value = value.strip().lower()
+
+        # ISO date: YYYY-MM-DD
+        match = re.fullmatch(
+            r"(\d{4})-(\d{1,2})-(\d{1,2})",
+            value,
+        )
+
+        if match:
+            year = int(match.group(1))
+            month = int(match.group(2))
+            day = int(match.group(3))
+
+            self._validate_month(month)
+
+            try:
+                return date(year, month, day)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid date: {value}"
+                ) from exc
 
         # MM/YYYY
         match = re.fullmatch(
