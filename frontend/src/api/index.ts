@@ -16,3 +16,4 @@ export {
 } from "./resumes";
 
 export { screenCandidates } from "./screening";
+export { rankJobCandidates, getScreenings } from "./ranking";
