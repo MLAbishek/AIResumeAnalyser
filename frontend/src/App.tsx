@@ -3,6 +3,8 @@ import JobsPage from "./pages/JobsPage";
 import ResumesPage from "./pages/ResumesPage";
 import ScreeningPage from "./pages/ScreeningPage";
 import RankingPage from "./pages/RankingPage";
+import CandidateMatchProfilePage from "./pages/CandidateMatchProfilePage";
+import ScreeningHistoryPage from "./pages/ScreeningHistoryPage";
 
 function HomePage() {
   return (
@@ -41,12 +43,22 @@ export default function App() {
         path="/screening"
         element={<ScreeningPage />}
       />
+     <Route
+        path="/screening-history"
+        element={<ScreeningHistoryPage />}
+      />
 
       <Route
         path="/ranking"
         element={<RankingPage />}
       />
 
+      <Route
+        path="/ranking/:jobId/:resumeId"
+        element={
+            <CandidateMatchProfilePage />
+        }
+      />
       <Route
         path="/404"
         element={<NotFoundPage />}
