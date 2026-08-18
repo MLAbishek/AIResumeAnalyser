@@ -4,7 +4,7 @@ export {
   getApiErrorMessage,
 } from "./client";
 export { checkHealth } from "./health";
-export { login, registerUser } from "./auth";
+export { googleAuth, login, registerUser } from "./auth";
 
 export {
   closeJob,

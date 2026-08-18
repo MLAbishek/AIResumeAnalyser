@@ -22,8 +22,28 @@ class User(Base):
         index=True,
     )
 
-    password_hash: Mapped[str] = mapped_column(
+    # Nullable: Google-only accounts (auth_provider="google") never
+    # get a local password. Password accounts always set this.
+    password_hash: Mapped[str | None] = mapped_column(
         String(255),
+        nullable=True,
+    )
+
+    # Stable external identity for Google Sign-In - Google's `sub`
+    # claim, never the email, per Google's own guidance that `sub`
+    # (not email) is the durable identifier for an account. NULL for
+    # password-only accounts.
+    google_sub: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
+
+    auth_provider: Mapped[str] = mapped_column(
+        String(20),
+        default="password",
+        server_default="password",
         nullable=False,
     )
 

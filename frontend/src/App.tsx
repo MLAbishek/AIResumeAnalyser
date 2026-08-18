@@ -18,6 +18,7 @@ import CandidateJobDetailPage from "./pages/candidate/CandidateJobDetailPage";
 import CandidateApplicationsPage from "./pages/candidate/CandidateApplicationsPage";
 import CandidateApplicationDetailPage from "./pages/candidate/CandidateApplicationDetailPage";
 import NavBar from "./components/NavBar";
+import Sidebar from "./components/Sidebar";
 import PageHeader from "./components/PageHeader";
 import SectionCard from "./components/SectionCard";
 import StatCard from "./components/StatCard";
@@ -41,6 +42,21 @@ type Job = components["schemas"]["JobResponse"];
 type Resume = components["schemas"]["ResumeResponse"];
 
 function Layout() {
+  const isAuthenticated = Boolean(
+    localStorage.getItem("access_token"),
+  );
+
+  if (isAuthenticated) {
+    return (
+      <div className="app-shell">
+        <Sidebar />
+        <div className="app-shell__main">
+          <Outlet />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <NavBar />

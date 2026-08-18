@@ -228,6 +228,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Google Auth
+         * @description Exchange a verified Google ID token for the application's own
+         *     JWT - the same token type/shape issued by password login. The
+         *     Google credential itself is never used as, or returned as, an
+         *     application access token.
+         */
+        post: operations["google_auth_api_auth_google_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/candidate/jobs": {
         parameters: {
             query?: never;
@@ -550,6 +573,13 @@ export interface components {
             end_date?: string | null;
             /** Description */
             description?: string | null;
+        };
+        /** GoogleAuthRequest */
+        GoogleAuthRequest: {
+            /** Credential */
+            credential: string;
+            /** Role */
+            role?: ("recruiter" | "candidate") | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1472,6 +1502,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    google_auth_api_auth_google_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleAuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
                 };
             };
             /** @description Validation Error */

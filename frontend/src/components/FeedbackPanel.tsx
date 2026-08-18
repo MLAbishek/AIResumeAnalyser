@@ -1,6 +1,7 @@
 import SectionCard from "./SectionCard";
 import ScoreBar from "./ScoreBar";
 import SkillChip from "./SkillChip";
+import RadialScore from "./RadialScore";
 import { EligibilityBadge, DecisionBadge } from "./StatusBadge";
 import type { components } from "../types/api";
 
@@ -109,24 +110,14 @@ export default function FeedbackPanel({
           </div>
 
           {finalScorePercent !== null && (
-            <div
-              style={{
-                textAlign: "right",
-                minWidth: "140px",
-              }}
-            >
+            <div style={{ textAlign: "center" }}>
               <p
                 className="stat-card__label"
-                style={{ margin: 0 }}
+                style={{ margin: "0 0 0.35rem" }}
               >
                 Overall Match Score
               </p>
-              <p
-                className="stat-card__value"
-                style={{ fontSize: "2rem" }}
-              >
-                {finalScorePercent.toFixed(1)}%
-              </p>
+              <RadialScore value={finalScorePercent} />
             </div>
           )}
         </div>

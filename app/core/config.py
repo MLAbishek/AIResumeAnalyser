@@ -26,6 +26,11 @@ class Settings(BaseSettings):
         default=60,
         ge=1,
     )
+
+    # Google Sign-In (server-side ID token verification). Empty by
+    # default - Google auth endpoints reject requests until this is
+    # configured with a real Google OAuth Web Client ID.
+    google_client_id: str = ""
     
     # Models
     embedding_model: str = ""

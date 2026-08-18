@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { registerUser } from "../api";
 import { getApiErrorMessage } from "../api/client";
+import { getStoredRole } from "../api/authRole";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 import {
   IconBarChart,
   IconBriefcase,
@@ -125,6 +127,16 @@ export default function RegisterPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleGoogleSuccess(accessToken: string) {
+    localStorage.setItem("access_token", accessToken);
+
+    navigate(
+      getStoredRole() === "candidate"
+        ? "/candidate/dashboard"
+        : "/jobs",
+    );
   }
 
   return (
@@ -399,6 +411,16 @@ export default function RegisterPage() {
                   : "Create Account"}
               </button>
             </form>
+
+            <div className="auth-divider" role="separator">
+              <span>or</span>
+            </div>
+
+            <GoogleSignInButton
+              role={role}
+              onSuccess={handleGoogleSuccess}
+              onError={setFormError}
+            />
 
             <p
               className="text-sm muted"

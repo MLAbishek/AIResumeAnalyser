@@ -38,6 +38,41 @@ vi.mock("../api", () => ({
   ) => mockRegisterUser(...args),
 }));
 
+// GoogleSignInButton has its own focused test suite - here we only
+// need to confirm RegisterPage renders it, passes the selected role
+// through, and wires its success/error callbacks correctly.
+vi.mock("../components/GoogleSignInButton", () => ({
+  default: ({
+    role,
+    onSuccess,
+    onError,
+  }: {
+    role?: string;
+    onSuccess: (token: string) => void;
+    onError: (message: string) => void;
+  }) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => onSuccess("google-app-token")}
+      >
+        Sign up with Google ({role ?? "no role"})
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onError(
+            "An account with this email already exists. " +
+              "Please sign in with your password instead.",
+          )
+        }
+      >
+        Simulate Google Error
+      </button>
+    </div>
+  ),
+}));
+
 function renderPage() {
   return render(
     <MemoryRouter>
@@ -255,5 +290,63 @@ describe("RegisterPage", () => {
     expect(storedValues).not.toContain(
       "StrongPassword123!",
     );
+  });
+
+  it("defaults to the recruiter role and offers a candidate toggle", () => {
+    renderPage();
+
+    expect(
+      screen.getByRole("radio", { name: /Recruiter/i }),
+    ).toHaveProperty("ariaChecked", "true");
+    expect(
+      screen.getByRole("radio", { name: /Candidate/i }),
+    ).toHaveProperty("ariaChecked", "false");
+  });
+
+  it("passes the selected role into the Google sign-up button", () => {
+    renderPage();
+
+    fireEvent.click(
+      screen.getByRole("radio", { name: /Candidate/i }),
+    );
+
+    expect(
+      screen.getByText("Sign up with Google (candidate)"),
+    ).toBeTruthy();
+  });
+
+  it("stores the token and redirects after a successful Google sign-up", async () => {
+    renderPage();
+
+    fireEvent.click(
+      screen.getByText(/Sign up with Google/),
+    );
+
+    await vi.waitFor(() => {
+      expect(
+        localStorage.getItem("access_token"),
+      ).toBe("google-app-token");
+    });
+
+    // No role claim in this opaque test token, so completeAuth()
+    // falls back to the non-candidate destination - proving the
+    // Google success path reaches the same redirect logic as
+    // password registration's login handoff.
+    expect(mockNavigate).toHaveBeenCalledWith("/jobs");
+  });
+
+  it("shows a clean error when Google sign-up reports an existing account", async () => {
+    renderPage();
+
+    fireEvent.click(
+      screen.getByText("Simulate Google Error"),
+    );
+
+    expect(
+      await screen.findByText(
+        "An account with this email already exists. " +
+          "Please sign in with your password instead.",
+      ),
+    ).toBeTruthy();
   });
 });

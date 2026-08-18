@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { login } from "../api";
+import { getApiErrorMessage } from "../api/client";
 import { getStoredRole } from "../api/authRole";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 import {
   IconBarChart,
   IconCheck,
@@ -25,6 +27,19 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function completeAuth(accessToken: string) {
+    localStorage.setItem("access_token", accessToken);
+
+    // Candidates land in their own portal; every other existing
+    // role (recruiter/admin/viewer) keeps the original /jobs
+    // destination unchanged.
+    navigate(
+      getStoredRole() === "candidate"
+        ? "/candidate/dashboard"
+        : "/jobs",
+    );
+  }
+
   async function handleLogin(
     event: React.FormEvent<HTMLFormElement>,
   ) {
@@ -39,22 +54,15 @@ export default function LoginPage() {
         password,
       });
 
-      localStorage.setItem(
-        "access_token",
-        response.access_token,
-      );
-
-      // Candidates land in their own portal; every other existing
-      // role (recruiter/admin/viewer) keeps the original /jobs
-      // destination unchanged.
-      navigate(
-        getStoredRole() === "candidate"
-          ? "/candidate/dashboard"
-          : "/jobs",
-      );
+      completeAuth(response.access_token);
     } catch (err) {
       console.error("Login failed:", err);
-      setError("Invalid email or password.");
+      setError(
+        getApiErrorMessage(
+          err,
+          "Invalid email or password.",
+        ),
+      );
     } finally {
       setLoading(false);
     }
@@ -164,6 +172,15 @@ export default function LoginPage() {
                 {loading ? "Logging in..." : "Login"}
               </button>
             </form>
+
+            <div className="auth-divider" role="separator">
+              <span>or</span>
+            </div>
+
+            <GoogleSignInButton
+              onSuccess={completeAuth}
+              onError={setError}
+            />
 
             <p
               className="text-sm muted"
