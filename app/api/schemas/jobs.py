@@ -59,3 +59,4 @@ class JobResponse(BaseModel):
     required_certifications: list[str]
 
     required_experience_months: int
+    status: str = "open"

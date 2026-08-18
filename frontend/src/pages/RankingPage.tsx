@@ -1,11 +1,33 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import type { components } from "../types/api";
+import { getApiErrorMessage } from "../api/client";
 import { getJobs } from "../api/jobs";
 import {
   getScreenings,
   rankJobCandidates,
   type RankingResult,
 } from "../api/ranking";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  ValidationMessage,
+} from "../components/UXStates";
+import PageHeader from "../components/PageHeader";
+import SectionCard from "../components/SectionCard";
+import StatCard from "../components/StatCard";
+import ScoreBar from "../components/ScoreBar";
+import { EligibilityBadge, DecisionBadge } from "../components/StatusBadge";
+import {
+  IconBarChart,
+  IconCheck,
+  IconTarget,
+} from "../components/icons";
 
 type Job = components["schemas"]["JobResponse"];
 type Screening =
@@ -19,7 +41,13 @@ type CandidateRow = RankingResult & {
   decision_reason: string | null;
 };
 
+function formatPercent(fraction: number): string {
+  return `${(fraction * 100).toFixed(0)}%`;
+}
+
 export default function RankingPage() {
+  const [searchParams] = useSearchParams();
+
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
 
@@ -30,7 +58,7 @@ export default function RankingPage() {
 
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  async function loadJobs() {
     const token = localStorage.getItem("access_token");
 
     if (!token) {
@@ -39,28 +67,58 @@ export default function RankingPage() {
       return;
     }
 
-    getJobs(token)
-      .then((data) => {
-        setJobs(data);
-      })
-      .catch((err) => {
-        console.error("Failed to load jobs:", err);
-        setError("Failed to load jobs.");
-      })
-      .finally(() => {
-        setLoadingJobs(false);
-      });
+    setLoadingJobs(true);
+    setError(null);
+
+    try {
+      const data = await getJobs(token);
+      setJobs(data);
+    } catch (err) {
+      console.error("Failed to load jobs:", err);
+      setError(
+        getApiErrorMessage(
+          err,
+          "Failed to load jobs.",
+        ),
+      );
+    } finally {
+      setLoadingJobs(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadJobs();
   }, []);
 
-  async function handleLoadRanking() {
+  useEffect(() => {
+    const jobIdFromQuery = searchParams.get("jobId");
+
+    if (
+      jobIdFromQuery &&
+      jobs.some(
+        (job) => job.job_id === jobIdFromQuery,
+      )
+    ) {
+      setSelectedJobId(jobIdFromQuery);
+      void handleLoadRanking(jobIdFromQuery);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs]);
+
+  async function handleLoadRanking(
+    jobIdOverride?: string,
+  ) {
     const token = localStorage.getItem("access_token");
+
+    const targetJobId =
+      jobIdOverride ?? selectedJobId;
 
     if (!token) {
       setError("Authentication required.");
       return;
     }
 
-    if (!selectedJobId) {
+    if (!targetJobId) {
       setError("Please select a job.");
       return;
     }
@@ -73,11 +131,11 @@ export default function RankingPage() {
       const [rankingResponse, screeningResponse] =
         await Promise.all([
           rankJobCandidates(
-            selectedJobId,
+            targetJobId,
             token,
           ),
           getScreenings(
-            selectedJobId,
+            targetJobId,
             token,
           ),
         ]);
@@ -133,7 +191,10 @@ export default function RankingPage() {
       );
 
       setError(
-        "Failed to load ranking. Make sure screening has been completed for this job.",
+        getApiErrorMessage(
+          err,
+          "Failed to load ranking. Make sure screening has been completed for this job.",
+        ),
       );
     } finally {
       setRanking(false);
@@ -161,124 +222,150 @@ export default function RankingPage() {
     );
   }, [rows]);
 
+  const selectedJob = jobs.find(
+    (job) => job.job_id === selectedJobId,
+  );
+
   if (loadingJobs) {
     return (
       <main>
-        <h1>Candidate Ranking</h1>
-        <p>Loading jobs...</p>
+        <PageHeader
+          eyebrow="Ranking"
+          title="Candidate Ranking"
+        />
+        <LoadingState message="Loading jobs..." />
       </main>
     );
   }
 
   return (
     <main>
-      <h1>Candidate Ranking Dashboard</h1>
+      <PageHeader
+        eyebrow="Ranking"
+        title="Candidate Ranking"
+        subtitle="AI-ranked candidates based on job requirements and semantic matching."
+      />
 
       {error && (
-        <p role="alert">
-          {error}
-        </p>
+        <ErrorState
+          message={error}
+          onRetry={
+            error === "Please select a job."
+              ? undefined
+              : () => {
+                  if (selectedJobId) {
+                    void handleLoadRanking();
+                  } else {
+                    void loadJobs();
+                  }
+                }
+          }
+        />
       )}
 
-      <section>
-        <h2>Select Job</h2>
-
+      <SectionCard title="Select Job">
         {jobs.length === 0 ? (
-          <p>
-            No jobs available. Create a job
-            before viewing rankings.
-          </p>
+          <EmptyState
+            title="No jobs available"
+            message="Create a job before viewing candidate rankings."
+          />
         ) : (
           <>
-            <label htmlFor="ranking-job">
-              Job Description
-            </label>
+            <div className="field">
+              <label htmlFor="ranking-job">
+                Job Description
+              </label>
 
-            <select
-              id="ranking-job"
-              value={selectedJobId}
-              onChange={(event) => {
-                setSelectedJobId(
-                  event.target.value,
-                );
-                setRows([]);
-                setError(null);
-              }}
-            >
-              <option value="">
-                Select a job
-              </option>
-
-              {jobs.map((job) => (
-                <option
-                  key={job.job_id}
-                  value={job.job_id}
-                >
-                  {job.title ?? job.job_id}
-                  {job.location
-                    ? ` — ${job.location}`
-                    : ""}
+              <select
+                id="ranking-job"
+                value={selectedJobId}
+                onChange={(event) => {
+                  setSelectedJobId(
+                    event.target.value,
+                  );
+                  setRows([]);
+                  setError(null);
+                }}
+              >
+                <option value="">
+                  Select a job
                 </option>
-              ))}
-            </select>
+
+                {jobs.map((job) => (
+                  <option
+                    key={job.job_id}
+                    value={job.job_id}
+                  >
+                    {job.title ?? job.job_id}
+                    {job.location
+                      ? ` — ${job.location}`
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {!selectedJobId && (
+              <ValidationMessage message="Select a job to load rankings." />
+            )}
 
             <button
               type="button"
-              onClick={handleLoadRanking}
+              className="btn btn-primary"
+              onClick={() => handleLoadRanking()}
               disabled={
                 ranking || !selectedJobId
               }
             >
+              {ranking ? (
+                <span
+                  className="spinner-inline"
+                  aria-hidden="true"
+                />
+              ) : (
+                <IconBarChart width={16} height={16} />
+              )}
               {ranking
                 ? "Loading Ranking..."
                 : "Load Ranking"}
             </button>
           </>
         )}
-      </section>
+      </SectionCard>
 
       {rows.length > 0 && (
         <>
-          <section>
-            <h2>Ranking Summary</h2>
+          <div className="grid-3" style={{ marginBottom: "1.5rem" }}>
+            <StatCard
+              icon={<IconTarget width={18} height={18} />}
+              label="Candidates"
+              value={rows.length}
+              hint={
+                selectedJob
+                  ? selectedJob.title ?? selectedJob.job_id
+                  : undefined
+              }
+            />
+            <StatCard
+              icon={<IconCheck width={18} height={18} />}
+              label="Eligible"
+              value={eligibleCount}
+            />
+            <StatCard
+              icon={<IconBarChart width={18} height={18} />}
+              label="Average Score"
+              value={formatPercent(averageScore)}
+            />
+          </div>
 
-            <p>
-              <strong>
-                Candidates:
-              </strong>{" "}
-              {rows.length}
-            </p>
-
-            <p>
-              <strong>
-                Eligible:
-              </strong>{" "}
-              {eligibleCount}
-            </p>
-
-            <p>
-              <strong>
-                Average Score:
-              </strong>{" "}
-              {averageScore.toFixed(2)}
-            </p>
-          </section>
-
-          <section>
-            <h2>Ranked Candidates</h2>
-
-            <div
-              style={{
-                overflowX: "auto",
-              }}
-            >
+          <SectionCard title="Ranked Candidates">
+            <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>Rank</th>
                     <th>Candidate</th>
-                    <th>Resume ID</th>
-                    <th>Score</th>
+                    <th>Overall Score</th>
                     <th>Eligibility</th>
                     <th>Decision</th>
                     <th>Skills</th>
@@ -297,62 +384,78 @@ export default function RankingPage() {
                       }
                     >
                       <td>
-                        {candidate.rank}
+                        <span
+                          className={`rank-badge${
+                            candidate.rank <= 3
+                              ? " rank-badge--top"
+                              : ""
+                          }`}
+                        >
+                          {candidate.rank}
+                        </span>
                       </td>
 
                       <td>
-                        {candidate.candidate_name ??
-                          "Unknown Candidate"}
+                        <Link
+                          to={`/ranking/${encodeURIComponent(
+                            selectedJobId,
+                          )}/${encodeURIComponent(
+                            candidate.resume_id,
+                          )}`}
+                        >
+                          {candidate.candidate_name ??
+                            "Unknown Candidate"}
+                        </Link>
+                        <p className="muted text-sm mt-0">
+                          {candidate.resume_id}
+                        </p>
                       </td>
 
                       <td>
-                        {candidate.resume_id}
+                        <ScoreBar
+                          value={candidate.score * 100}
+                        />
                       </td>
 
                       <td>
-                        {candidate.score.toFixed(
-                          2,
+                        <EligibilityBadge
+                          eligible={candidate.eligible}
+                        />
+                      </td>
+
+                      <td>
+                        <DecisionBadge
+                          decision={candidate.decision}
+                        />
+                      </td>
+
+                      <td>
+                        {formatPercent(
+                          candidate.skill_score,
                         )}
                       </td>
 
                       <td>
-                        {candidate.eligible
-                          ? "Eligible"
-                          : "Not Eligible"}
-                      </td>
-
-                      <td>
-                        {candidate.decision ??
-                          "—"}
-                      </td>
-
-                      <td>
-                        {candidate.skill_score.toFixed(
-                          2,
+                        {formatPercent(
+                          candidate.experience_score,
                         )}
                       </td>
 
                       <td>
-                        {candidate.experience_score.toFixed(
-                          2,
+                        {formatPercent(
+                          candidate.seniority_score,
                         )}
                       </td>
 
                       <td>
-                        {candidate.seniority_score.toFixed(
-                          2,
+                        {formatPercent(
+                          candidate.education_score,
                         )}
                       </td>
 
                       <td>
-                        {candidate.education_score.toFixed(
-                          2,
-                        )}
-                      </td>
-
-                      <td>
-                        {candidate.semantic_score.toFixed(
-                          2,
+                        {formatPercent(
+                          candidate.semantic_score,
                         )}
                       </td>
                     </tr>
@@ -360,7 +463,7 @@ export default function RankingPage() {
                 </tbody>
               </table>
             </div>
-          </section>
+          </SectionCard>
         </>
       )}
 
@@ -368,12 +471,10 @@ export default function RankingPage() {
         selectedJobId &&
         rows.length === 0 &&
         !error && (
-          <section>
-            <p>
-              No ranking results available for
-              this job.
-            </p>
-          </section>
+          <EmptyState
+            title="No ranking results"
+            message="No eligible candidates are available for this job."
+          />
         )}
     </main>
   );

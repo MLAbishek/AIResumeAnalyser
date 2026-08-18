@@ -12,6 +12,55 @@ export class ApiError extends Error {
   }
 }
 
+export function getApiErrorMessage(
+  error: unknown,
+  fallback = "Something went wrong. Please try again.",
+): string {
+  if (error instanceof ApiError) {
+    if (
+      typeof error.data === "object" &&
+      error.data !== null &&
+      "detail" in error.data
+    ) {
+      const detail = (
+        error.data as {
+          detail?: unknown;
+        }
+      ).detail;
+
+      if (typeof detail === "string") {
+        return detail;
+      }
+    }
+
+    if (typeof error.data === "string") {
+      return error.data;
+    }
+
+    if (error.status === 401) {
+      return "Your session has expired. Please sign in again.";
+    }
+
+    if (error.status === 403) {
+      return "You do not have permission to perform this action.";
+    }
+
+    if (error.status === 404) {
+      return "The requested resource was not found.";
+    }
+
+    if (error.status >= 500) {
+      return "The server could not complete the request. Please try again.";
+    }
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
 type RequestOptions = RequestInit & {
   token?: string;
 };
@@ -22,10 +71,19 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const { token, headers, ...requestOptions } = options;
 
+  // A FormData body (file uploads) must let the browser set its own
+  // multipart Content-Type with the correct boundary - forcing
+  // application/json here would break the upload.
+  const isFormData =
+    typeof FormData !== "undefined" &&
+    requestOptions.body instanceof FormData;
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...requestOptions,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData
+        ? {}
+        : { "Content-Type": "application/json" }),
       ...headers,
       ...(token
         ? {

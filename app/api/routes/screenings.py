@@ -36,6 +36,7 @@ from app.api.schemas.screenings import (
     ScreeningResultResponse,
 )
 from app.database.crud.jobs import get_job_by_id
+from app.database.models.profile import MatchProfile
 from app.database.models.screening import ScreeningResult
 
 
@@ -144,7 +145,7 @@ def get_screening(
             selectinload(
                 ScreeningResult.profile
             ).selectinload(
-                lambda profile: profile.evidence
+                MatchProfile.evidence
             ),
         )
         .filter(
@@ -201,7 +202,7 @@ def list_screenings(
             selectinload(
                 ScreeningResult.profile
             ).selectinload(
-                lambda profile: profile.evidence
+                MatchProfile.evidence
             ),
         )
         .filter(

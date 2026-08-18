@@ -4,6 +4,15 @@ import { ApiError } from "../api/client";
 import { getJobs } from "../api/jobs";
 import { getResumes } from "../api/resumes";
 import { screenCandidates } from "../api/screening";
+import PageHeader from "../components/PageHeader";
+import SectionCard from "../components/SectionCard";
+import { EligibilityBadge, DecisionBadge } from "../components/StatusBadge";
+import ScoreBar from "../components/ScoreBar";
+import { LoadingState } from "../components/UXStates";
+import {
+  IconCheck,
+  IconWand,
+} from "../components/icons";
 
 type Job = components["schemas"]["JobResponse"];
 type Resume = components["schemas"]["ResumeResponse"];
@@ -216,27 +225,86 @@ export default function ScreeningPage() {
   if (loading) {
     return (
       <main>
-        <h1>Screening Setup</h1>
-        <p>
-          Loading jobs and resumes...
-        </p>
+        <PageHeader
+          eyebrow="Screening"
+          title="Screening Setup"
+          subtitle="Run AI-assisted eligibility screening for candidates against a job."
+        />
+        <LoadingState message="Loading jobs and resumes..." />
       </main>
     );
   }
 
+  const selectedJob = jobs.find(
+    (job) => job.job_id === selectedJobId,
+  );
+
+  const stepIndex = !selectedJobId
+    ? 1
+    : selectedResumeIds.length === 0
+      ? 2
+      : screeningStatus === "success"
+        ? 4
+        : 3;
+
+  const shortlistedCount =
+    result?.results.filter(
+      (candidate) =>
+        typeof candidate.decision === "string" &&
+        candidate.decision.toLowerCase() === "shortlist",
+    ).length ?? 0;
+
   return (
     <main>
-      <h1>Screening Setup</h1>
+      <PageHeader
+        eyebrow="Screening"
+        title="Screening Setup"
+        subtitle="Run AI-assisted eligibility screening for candidates against a job."
+      />
+
+      <ol className="steps">
+        {[
+          "Select Job",
+          "Select Candidates",
+          "Run Screening",
+          "Review Results",
+        ].map((label, index) => {
+          const num = index + 1;
+          const stateClass =
+            num === stepIndex
+              ? " step--active"
+              : num < stepIndex
+                ? " step--done"
+                : "";
+
+          return (
+            <li key={label} className={`step${stateClass}`}>
+              <span className="step__num">
+                {num < stepIndex ? (
+                  <IconCheck width={11} height={11} strokeWidth={3} />
+                ) : (
+                  num
+                )}
+              </span>
+              {label}
+            </li>
+          );
+        })}
+      </ol>
 
       {error && (
-        <section>
-          <p role="alert">
-            {error}
-          </p>
+        <div
+          role="alert"
+          className="state-panel state-panel--error"
+          style={{ marginBottom: "1.5rem" }}
+        >
+          <h2>Screening could not run</h2>
+          <p>{error}</p>
 
           {screeningStatus === "error" && (
             <button
               type="button"
+              className="btn btn-secondary"
               onClick={handleScreening}
               disabled={
                 screening ||
@@ -248,13 +316,16 @@ export default function ScreeningPage() {
               Retry Screening
             </button>
           )}
-        </section>
+        </div>
       )}
 
       {screeningStatus === "processing" && (
-        <section
+        <div
           aria-live="polite"
+          className="state-panel"
+          style={{ marginBottom: "1.5rem" }}
         >
+          <span className="spinner" aria-hidden="true" />
           <h2>
             Screening in Progress
           </h2>
@@ -275,14 +346,26 @@ export default function ScreeningPage() {
             decision analysis and
             explanation.
           </p>
-        </section>
+        </div>
       )}
 
       {screeningStatus === "success" &&
         result && (
-          <section
+          <div
             aria-live="polite"
+            className="state-panel"
+            style={{
+              marginBottom: "1.5rem",
+              borderStyle: "solid",
+              borderColor: "var(--color-success-border)",
+              background: "var(--color-success-soft)",
+            }}
           >
+            <IconCheck
+              width={26}
+              height={26}
+              style={{ color: "var(--color-success)" }}
+            />
             <h2>
               Screening Completed
             </h2>
@@ -297,201 +380,258 @@ export default function ScreeningPage() {
                 ? ""
                 : "s"}.
             </p>
-          </section>
-        )}
-
-      <section>
-        <h2>
-          1. Select Job Description
-        </h2>
-
-        {jobs.length === 0 ? (
-          <p>
-            No jobs available. Create a
-            job before starting
-            screening.
-          </p>
-        ) : (
-          <div>
-            <label htmlFor="screening-job">
-              Job Description
-            </label>
-
-            <select
-              id="screening-job"
-              value={selectedJobId}
-              disabled={screening}
-              onChange={(event) => {
-                setSelectedJobId(
-                  event.target.value,
-                );
-
-                setResult(null);
-                setError(null);
-
-                if (
-                  event.target.value
-                ) {
-                  setScreeningStatus(
-                    "idle",
-                  );
-                }
-              }}
-            >
-              <option value="">
-                Select a job
-              </option>
-
-              {jobs.map((job) => (
-                <option
-                  key={job.job_id}
-                  value={job.job_id}
-                >
-                  {job.title ??
-                    job.job_id}
-
-                  {job.location
-                    ? ` — ${job.location}`
-                    : ""}
-                </option>
-              ))}
-            </select>
           </div>
         )}
-      </section>
 
-      <section>
-        <h2>
-          2. Select Candidate Resumes
-        </h2>
+      <div className="workflow-layout">
+        <div className="stack">
+          <SectionCard title="1. Select Job Description">
+            {jobs.length === 0 ? (
+              <p className="muted">
+                No jobs available. Create a
+                job before starting
+                screening.
+              </p>
+            ) : (
+              <div className="field">
+                <label htmlFor="screening-job">
+                  Job Description
+                </label>
 
-        {resumes.length === 0 ? (
-          <p>
-            No resumes available.
-            Upload resumes before
-            starting screening.
-          </p>
-        ) : (
-          <>
-            <div>
-              <button
-                type="button"
-                onClick={
-                  selectAllResumes
-                }
-                disabled={screening}
-              >
-                Select All
-              </button>
+                <select
+                  id="screening-job"
+                  value={selectedJobId}
+                  disabled={screening}
+                  onChange={(event) => {
+                    setSelectedJobId(
+                      event.target.value,
+                    );
 
-              <button
-                type="button"
-                onClick={
-                  clearResumeSelection
-                }
-                disabled={screening}
-              >
-                Clear Selection
-              </button>
+                    setResult(null);
+                    setError(null);
+
+                    if (
+                      event.target.value
+                    ) {
+                      setScreeningStatus(
+                        "idle",
+                      );
+                    }
+                  }}
+                >
+                  <option value="">
+                    Select a job
+                  </option>
+
+                  {jobs.map((job) => (
+                    <option
+                      key={job.job_id}
+                      value={job.job_id}
+                    >
+                      {job.title ??
+                        job.job_id}
+
+                      {job.location
+                        ? ` — ${job.location}`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard title="2. Select Candidate Resumes">
+            {resumes.length === 0 ? (
+              <p className="muted">
+                No resumes available.
+                Upload resumes before
+                starting screening.
+              </p>
+            ) : (
+              <>
+                <div
+                  className="card__actions"
+                  style={{ marginBottom: "0.85rem" }}
+                >
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={
+                      selectAllResumes
+                    }
+                    disabled={screening}
+                  >
+                    Select All
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={
+                      clearResumeSelection
+                    }
+                    disabled={screening}
+                  >
+                    Clear Selection
+                  </button>
+                </div>
+
+                <p className="muted text-sm">
+                  Selected:{" "}
+                  {selectedResumeIds.length}{" "}
+                  / {resumes.length}
+                </p>
+
+                <ul className="stack" style={{ gap: "0.5rem" }}>
+                  {resumes.map(
+                    (resume) => {
+                      const checked =
+                        selectedResumeIds.includes(
+                          resume.resume_id,
+                        );
+
+                      return (
+                        <li
+                          key={
+                            resume.resume_id
+                          }
+                          className="card"
+                          style={{
+                            margin: 0,
+                            borderColor: checked
+                              ? "var(--color-primary)"
+                              : undefined,
+                            background: checked
+                              ? "var(--color-primary-soft)"
+                              : undefined,
+                          }}
+                        >
+                          <label className="checkbox-row">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={screening}
+                              onChange={() =>
+                                toggleResume(
+                                  resume.resume_id,
+                                )
+                              }
+                            />
+
+                            <span style={{ flex: 1 }}>
+                              <strong>
+                                {resume.name ??
+                                  resume.resume_id}
+                              </strong>
+
+                              <p className="muted text-sm mt-0">
+                                {resume.resume_id}
+                                {resume.email && (
+                                  <> — {resume.email}</>
+                                )}
+                                {" · "}
+                                {resume.total_experience_months} months
+                              </p>
+
+                              {resume.skills.length > 0 && (
+                                <span className="muted text-sm">
+                                  {resume.skills.slice(0, 5).join(", ")}
+                                </span>
+                              )}
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    },
+                  )}
+                </ul>
+              </>
+            )}
+          </SectionCard>
+        </div>
+
+        <div className="workflow-layout__aside">
+          <SectionCard title="3. Start Screening">
+            <div className="stack" style={{ gap: "0.5rem" }}>
+              <p className="muted text-sm mt-0">
+                Job:{" "}
+                <strong>
+                  {selectedJob
+                    ? selectedJob.title ?? selectedJob.job_id
+                    : "None selected"}
+                </strong>
+              </p>
+              <p className="muted text-sm mt-0">
+                Candidates selected:{" "}
+                <strong>{selectedResumeIds.length}</strong>
+              </p>
             </div>
 
-            <p>
-              Selected:{" "}
-              {selectedResumeIds.length}{" "}
-              / {resumes.length}
-            </p>
-
-            <ul>
-              {resumes.map(
-                (resume) => (
-                  <li
-                    key={
-                      resume.resume_id
-                    }
-                  >
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={selectedResumeIds.includes(
-                          resume.resume_id,
-                        )}
-                        disabled={screening}
-                        onChange={() =>
-                          toggleResume(
-                            resume.resume_id,
-                          )
-                        }
-                      />
-
-                      {" "}
-
-                      <strong>
-                        {resume.name ??
-                          resume.resume_id}
-                      </strong>
-
-                      {resume.email && (
-                        <span>
-                          {" "}—{" "}
-                          {resume.email}
-                        </span>
-                      )}
-                    </label>
-                  </li>
-                ),
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              onClick={handleScreening}
+              disabled={
+                screening ||
+                !selectedJobId ||
+                selectedResumeIds.length ===
+                  0
+              }
+            >
+              {screening ? (
+                <span
+                  className="spinner-inline"
+                  aria-hidden="true"
+                />
+              ) : (
+                <IconWand width={16} height={16} />
               )}
-            </ul>
-          </>
-        )}
-      </section>
-
-      <section>
-        <h2>
-          3. Start Screening
-        </h2>
-
-        <button
-          type="button"
-          onClick={handleScreening}
-          disabled={
-            screening ||
-            !selectedJobId ||
-            selectedResumeIds.length ===
-              0
-          }
-        >
-          {screening
-            ? "Screening..."
-            : "Start Screening"}
-        </button>
-      </section>
+              {screening
+                ? "Screening..."
+                : "Start Screening"}
+            </button>
+          </SectionCard>
+        </div>
+      </div>
 
       {result && (
-        <section>
-          <h2>
-            Screening Results
-          </h2>
-
-          <p>
-            <strong>
-              Job:
-            </strong>{" "}
-            {result.job_id}
-          </p>
-
-          <p>
-            <strong>
-              Total Candidates:
-            </strong>{" "}
-            {result.total_candidates}
-          </p>
-
-          <p>
-            <strong>
-              Eligible Candidates:
-            </strong>{" "}
-            {result.eligible_candidates}
-          </p>
+        <SectionCard title="Screening Results">
+          <div className="grid-4" style={{ marginBottom: "1.25rem" }}>
+            <div className="stat-card">
+              <div className="stat-card__body">
+                <p className="stat-card__label">Screened</p>
+                <p className="stat-card__value">
+                  {result.total_candidates}
+                </p>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card__body">
+                <p className="stat-card__label">Eligible</p>
+                <p className="stat-card__value">
+                  {result.eligible_candidates}
+                </p>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card__body">
+                <p className="stat-card__label">Not Eligible</p>
+                <p className="stat-card__value">
+                  {result.total_candidates -
+                    result.eligible_candidates}
+                </p>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-card__body">
+                <p className="stat-card__label">Shortlisted</p>
+                <p className="stat-card__value">
+                  {shortlistedCount}
+                </p>
+              </div>
+            </div>
+          </div>
 
           <h3>
             Candidate Results
@@ -499,79 +639,75 @@ export default function ScreeningPage() {
 
           {result.results.length ===
           0 ? (
-            <p>
+            <p className="muted">
               No screening results.
             </p>
           ) : (
-            <ul>
-              {result.results.map(
-                (
-                  candidate,
-                  index,
-                ) => {
-                  const resumeId =
-                    typeof candidate.resume_id ===
-                    "string"
-                      ? candidate.resume_id
-                      : `candidate-${index}`;
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>Eligibility</th>
+                    <th>Decision</th>
+                    <th>Match Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.results.map(
+                    (
+                      candidate,
+                      index,
+                    ) => {
+                      const resumeId =
+                        typeof candidate.resume_id ===
+                        "string"
+                          ? candidate.resume_id
+                          : `candidate-${index}`;
 
-                  const decision =
-                    typeof candidate.decision ===
-                    "string"
-                      ? candidate.decision
-                      : "Unknown";
+                      const decision =
+                        typeof candidate.decision ===
+                        "string"
+                          ? candidate.decision
+                          : null;
 
-                  const eligible =
-                    typeof candidate.eligible ===
-                    "boolean"
-                      ? candidate.eligible
-                      : false;
+                      const eligible =
+                        typeof candidate.eligible ===
+                        "boolean"
+                          ? candidate.eligible
+                          : false;
 
-                  const score =
-                    typeof candidate.ranking_score_percent ===
-                    "number"
-                      ? candidate.ranking_score_percent
-                      : null;
+                      const score =
+                        typeof candidate.ranking_score_percent ===
+                        "number"
+                          ? candidate.ranking_score_percent
+                          : null;
 
-                  return (
-                    <li
-                      key={resumeId}
-                    >
-                      <strong>
-                        {resumeId}
-                      </strong>
-
-                      {" — "}
-
-                      <span>
-                        {eligible
-                          ? "Eligible"
-                          : "Not Eligible"}
-                      </span>
-
-                      {" — Decision: "}
-
-                      <span>
-                        {decision}
-                      </span>
-
-                      {score !==
-                        null && (
-                        <span>
-                          {" — Score: "}
-                          {score.toFixed(
-                            2,
-                          )}
-                          %
-                        </span>
-                      )}
-                    </li>
-                  );
-                },
-              )}
-            </ul>
+                      return (
+                        <tr key={resumeId}>
+                          <td>{resumeId}</td>
+                          <td>
+                            <EligibilityBadge eligible={eligible} />
+                          </td>
+                          <td>
+                            <DecisionBadge decision={decision} />
+                          </td>
+                          <td>
+                            {score !== null ? (
+                              <ScoreBar value={score} />
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    },
+                  )}
+                </tbody>
+              </table>
+            </div>
           )}
-        </section>
+        </SectionCard>
       )}
     </main>
   );

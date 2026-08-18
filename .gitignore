@@ -64,4 +64,9 @@ data/evaluation/generated/
 
 # Local experiment outputs
 experiments/runs/
-models/
+/models/
+
+# Frontend
+node_modules/
+dist/
+build/

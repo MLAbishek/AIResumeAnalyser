@@ -1,8 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { components } from "../types/api";
+import { getApiErrorMessage } from "../api/client";
 import { getJobs } from "../api/jobs";
 import { getScreenings } from "../api/ranking";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../components/UXStates";
+import PageHeader from "../components/PageHeader";
+import SectionCard from "../components/SectionCard";
+import StatCard from "../components/StatCard";
+import { EligibilityBadge, DecisionBadge } from "../components/StatusBadge";
+import {
+  IconBarChart,
+  IconCheck,
+  IconHistory,
+} from "../components/icons";
 
 type Job = components["schemas"]["JobResponse"];
 type Screening =
@@ -16,16 +31,6 @@ function formatScore(
   }
 
   return score.toFixed(2);
-}
-
-function formatDecision(
-  decision: string | null,
-): string {
-  if (!decision) {
-    return "—";
-  }
-
-  return decision;
 }
 
 export default function ScreeningHistoryPage() {
@@ -70,7 +75,10 @@ export default function ScreeningHistoryPage() {
         );
 
         setError(
-          "Failed to load jobs.",
+          getApiErrorMessage(
+            err,
+            "Failed to load jobs.",
+          ),
         );
       })
       .finally(() => {
@@ -113,7 +121,10 @@ export default function ScreeningHistoryPage() {
       );
 
       setError(
-        "Failed to load screening history.",
+        getApiErrorMessage(
+          err,
+          "Failed to load screening history.",
+        ),
       );
     } finally {
       setLoadingHistory(false);
@@ -170,74 +181,81 @@ export default function ScreeningHistoryPage() {
   if (loadingJobs) {
     return (
       <main>
-        <h1>Screening History & Reports</h1>
-        <p>Loading jobs...</p>
+        <PageHeader
+          eyebrow="History"
+          title="Screening History & Reports"
+        />
+        <LoadingState message="Loading jobs..." />
       </main>
     );
   }
 
   return (
     <main>
-      <header>
-        <h1>Screening History & Reports</h1>
-
-        <p>
-          View previously persisted screening
-          results for a selected job.
-        </p>
-      </header>
+      <PageHeader
+        eyebrow="History"
+        title="Screening History & Reports"
+        subtitle="Review previously persisted screening results for a selected job."
+      />
 
       {error && (
-        <p role="alert">
-          {error}
-        </p>
+        <ErrorState
+          message={error}
+          onRetry={
+            selectedJobId
+              ? handleLoadHistory
+              : undefined
+          }
+        />
       )}
 
-      <section>
-        <h2>Select Job</h2>
-
+      <SectionCard title="Select Job">
         {jobs.length === 0 ? (
-          <p>
-            No jobs available.
-          </p>
+          <EmptyState
+            title="No jobs available"
+            message="Create a job before viewing screening history."
+          />
         ) : (
           <>
-            <label htmlFor="history-job">
-              Job Description
-            </label>
+            <div className="field">
+              <label htmlFor="history-job">
+                Job Description
+              </label>
 
-            <select
-              id="history-job"
-              value={selectedJobId}
-              onChange={(event) => {
-                setSelectedJobId(
-                  event.target.value,
-                );
+              <select
+                id="history-job"
+                value={selectedJobId}
+                onChange={(event) => {
+                  setSelectedJobId(
+                    event.target.value,
+                  );
 
-                setResults([]);
-                setLoadedJobId(null);
-                setError(null);
-              }}
-            >
-              <option value="">
-                Select a job
-              </option>
-
-              {jobs.map((job) => (
-                <option
-                  key={job.job_id}
-                  value={job.job_id}
-                >
-                  {job.title ?? job.job_id}
-                  {job.location
-                    ? ` — ${job.location}`
-                    : ""}
+                  setResults([]);
+                  setLoadedJobId(null);
+                  setError(null);
+                }}
+              >
+                <option value="">
+                  Select a job
                 </option>
-              ))}
-            </select>
+
+                {jobs.map((job) => (
+                  <option
+                    key={job.job_id}
+                    value={job.job_id}
+                  >
+                    {job.title ?? job.job_id}
+                    {job.location
+                      ? ` — ${job.location}`
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <button
               type="button"
+              className="btn btn-primary"
               onClick={
                 handleLoadHistory
               }
@@ -246,79 +264,68 @@ export default function ScreeningHistoryPage() {
                 !selectedJobId
               }
             >
+              {loadingHistory ? (
+                <span
+                  className="spinner-inline"
+                  aria-hidden="true"
+                />
+              ) : (
+                <IconHistory width={16} height={16} />
+              )}
               {loadingHistory
                 ? "Loading History..."
                 : "Load Screening History"}
             </button>
           </>
         )}
-      </section>
+      </SectionCard>
 
       {loadedJobId && (
         <>
-          <section>
-            <h2>Screening Summary</h2>
+          <div className="grid-4" style={{ marginBottom: "1.5rem" }}>
+            <StatCard
+              icon={<IconBarChart width={18} height={18} />}
+              label="Total Candidates"
+              value={results.length}
+            />
+            <StatCard
+              icon={<IconCheck width={18} height={18} />}
+              label="Eligible"
+              value={eligibleCount}
+            />
+            <StatCard
+              label="Shortlisted"
+              value={shortlistedCount}
+            />
+            <StatCard
+              label="Rejected"
+              value={rejectedCount}
+            />
+          </div>
 
-            <p>
-              <strong>Job:</strong>{" "}
-              {loadedJobId}
-            </p>
-
-            <p>
-              <strong>
-                Total Candidates:
-              </strong>{" "}
-              {results.length}
-            </p>
-
-            <p>
-              <strong>Eligible:</strong>{" "}
-              {eligibleCount}
-            </p>
-
-            <p>
-              <strong>Shortlisted:</strong>{" "}
-              {shortlistedCount}
-            </p>
-
-            <p>
-              <strong>Rejected:</strong>{" "}
-              {rejectedCount}
-            </p>
-
-            <p>
-              <strong>
-                Average Score:
-              </strong>{" "}
-              {averageScore === null
-                ? "—"
-                : averageScore.toFixed(2)}
-            </p>
-          </section>
-
-          <section>
-            <h2>Previous Screening Results</h2>
-
+          <SectionCard
+            title="Previous Screening Results"
+            subtitle={
+              averageScore !== null
+                ? `Average score: ${averageScore.toFixed(2)}`
+                : undefined
+            }
+          >
             {results.length === 0 ? (
-              <p>
-                No screening results have been
-                persisted for this job.
-              </p>
+              <EmptyState
+                title="No screening results"
+                message="No screening results have been persisted for this job."
+              />
             ) : (
-              <div
-                style={{
-                  overflowX: "auto",
-                }}
-              >
+              <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>Screening ID</th>
                       <th>Candidate</th>
                       <th>Resume ID</th>
                       <th>Eligibility</th>
                       <th>Decision</th>
-                      <th>Final Score</th>
+                      <th>Score</th>
                       <th>Reason</th>
                       <th>Details</th>
                     </tr>
@@ -333,12 +340,6 @@ export default function ScreeningHistoryPage() {
                           }
                         >
                           <td>
-                            {
-                              result.screening_id
-                            }
-                          </td>
-
-                          <td>
                             {result.candidate_name ??
                               "Unknown Candidate"}
                           </td>
@@ -350,15 +351,15 @@ export default function ScreeningHistoryPage() {
                           </td>
 
                           <td>
-                            {result.eligible
-                              ? "Eligible"
-                              : "Not Eligible"}
+                            <EligibilityBadge
+                              eligible={result.eligible}
+                            />
                           </td>
 
                           <td>
-                            {formatDecision(
-                              result.decision,
-                            )}
+                            <DecisionBadge
+                              decision={result.decision}
+                            />
                           </td>
 
                           <td>
@@ -367,7 +368,7 @@ export default function ScreeningHistoryPage() {
                             )}
                           </td>
 
-                          <td>
+                          <td className="muted text-sm">
                             {result.decision_reason ??
                               "—"}
                           </td>
@@ -390,7 +391,7 @@ export default function ScreeningHistoryPage() {
                 </table>
               </div>
             )}
-          </section>
+          </SectionCard>
         </>
       )}
 
@@ -398,12 +399,10 @@ export default function ScreeningHistoryPage() {
         selectedJobId &&
         !loadedJobId &&
         !error && (
-          <section>
-            <p>
-              Select the job and load its
-              screening history.
-            </p>
-          </section>
+          <p className="muted">
+            Select the job and load its
+            screening history.
+          </p>
         )}
     </main>
   );

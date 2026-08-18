@@ -39,3 +39,49 @@ export function getJob(
     },
   );
 }
+
+export function createJobFromFile(
+  title: string,
+  file: File,
+  token: string,
+) {
+  const formData = new FormData();
+
+  if (title) {
+    formData.append("title", title);
+  }
+
+  formData.append("file", file);
+
+  return apiRequest<JobResponse>("/api/jobs/upload", {
+    method: "POST",
+    token,
+    body: formData,
+  });
+}
+
+export function closeJob(
+  jobId: string,
+  token: string,
+) {
+  return apiRequest<JobResponse>(
+    `/api/jobs/${encodeURIComponent(jobId)}/close`,
+    {
+      method: "POST",
+      token,
+    },
+  );
+}
+
+export function deleteJob(
+  jobId: string,
+  token: string,
+) {
+  return apiRequest<void>(
+    `/api/jobs/${encodeURIComponent(jobId)}`,
+    {
+      method: "DELETE",
+      token,
+    },
+  );
+}

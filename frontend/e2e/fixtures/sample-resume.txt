@@ -1,0 +1,19 @@
+Taylor Morgan
+taylor.morgan@example.com
+
+SUMMARY
+Frontend engineer with strong React and TypeScript experience
+building production web applications.
+
+SKILLS
+React, TypeScript, JavaScript, HTML, CSS, Redux
+
+EXPERIENCE
+Frontend Engineer at Acme Corp
+January 2022 - January 2024
+Built and maintained React applications using TypeScript.
+
+EDUCATION
+Bachelor of Science in Computer Science
+State University
+2018 - 2022

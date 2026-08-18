@@ -7,6 +7,10 @@ from app.api.routes.jobs import router as jobs_router
 from app.api.routes.resumes import router as resumes_router
 from app.api.routes.screenings import router as screenings_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.candidate import router as candidate_router
+from app.api.routes.applications import (
+    router as applications_router,
+)
 
 app = FastAPI(
     title="Semantic Resume Screening System",
@@ -55,5 +59,15 @@ app.include_router(
 
 app.include_router(
     auth_router,
+    prefix="/api",
+)
+
+app.include_router(
+    candidate_router,
+    prefix="/api",
+)
+
+app.include_router(
+    applications_router,
     prefix="/api",
 )

@@ -1,18 +1,33 @@
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 Role = Literal[
     "admin",
     "recruiter",
     "viewer",
+    "candidate",
+]
+
+RegistrationRole = Literal[
+    "recruiter",
+    "candidate",
 ]
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(
+        min_length=8,
+        max_length=128,
+    )
+    role: RegistrationRole = "recruiter"
 
 
 class TokenResponse(BaseModel):

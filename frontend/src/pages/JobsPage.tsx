@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { createJob, getJobs } from "../api/jobs";
+import { getApiErrorMessage } from "../api/client";
 import type { components } from "../types/api";
+import PageHeader from "../components/PageHeader";
+import SectionCard from "../components/SectionCard";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../components/UXStates";
+import { IconBriefcase, IconPlus } from "../components/icons";
 
 type Job = components["schemas"]["JobResponse"];
 
@@ -16,8 +25,11 @@ export default function JobsPage() {
   const [experienceMonths, setExperienceMonths] = useState(0);
   const [rawText, setRawText] = useState("");
   const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState<string | null>(
+    null,
+  );
 
-  useEffect(() => {
+  function loadJobs() {
     const token = localStorage.getItem("access_token");
 
     if (!token) {
@@ -26,17 +38,26 @@ export default function JobsPage() {
       return;
     }
 
+    setLoading(true);
+    setError(null);
+
     getJobs(token)
       .then((data) => {
         setJobs(data);
       })
       .catch((err) => {
         console.error("Failed to load jobs:", err);
-        setError("Failed to load jobs.");
+        setError(
+          getApiErrorMessage(err, "Failed to load jobs."),
+        );
       })
       .finally(() => {
         setLoading(false);
       });
+  }
+
+  useEffect(() => {
+    loadJobs();
   }, []);
 
   async function handleCreateJob(
@@ -47,17 +68,17 @@ export default function JobsPage() {
     const token = localStorage.getItem("access_token");
 
     if (!token) {
-      setError("Authentication required.");
+      setFormError("Authentication required.");
       return;
     }
 
     if (!rawText.trim()) {
-      setError("Raw job description is required.");
+      setFormError("Raw job description is required.");
       return;
     }
 
     setCreating(true);
-    setError(null);
+    setFormError(null);
 
     const jobId = `frontend-${Date.now()}`;
 
@@ -89,7 +110,9 @@ export default function JobsPage() {
       setRawText("");
     } catch (err) {
       console.error("Failed to create job:", err);
-      setError("Failed to create job.");
+      setFormError(
+        getApiErrorMessage(err, "Failed to create job."),
+      );
     } finally {
       setCreating(false);
     }
@@ -97,120 +120,189 @@ export default function JobsPage() {
 
   return (
     <main>
-      <h1>Job Management</h1>
+      <PageHeader
+        eyebrow="Jobs"
+        title="Job Management"
+        subtitle="Create and manage positions for candidate screening."
+      />
 
-      <section>
-        <h2>Create Job</h2>
+      <div className="workflow-layout">
+        <div className="stack">
+          <SectionCard title="Jobs">
+            {loading && (
+              <LoadingState message="Loading jobs..." />
+            )}
 
-        <form onSubmit={handleCreateJob}>
-          <div>
-            <label htmlFor="job-title">Job Title</label>
-            <input
-              id="job-title"
-              name="title"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-            />
-          </div>
+            {error && (
+              <ErrorState message={error} onRetry={loadJobs} />
+            )}
 
-          <div>
-            <label htmlFor="job-description">Description</label>
-            <textarea
-              id="job-description"
-              name="description"
-              value={description}
-              onChange={(event) =>
-                setDescription(event.target.value)
-              }
-            />
-          </div>
+            {!loading && !error && jobs.length === 0 && (
+              <EmptyState
+                title="No jobs yet"
+                message="No job descriptions have been created yet."
+              />
+            )}
 
-          <div>
-            <label htmlFor="job-location">Location</label>
-            <input
-              id="job-location"
-              name="location"
-              value={location}
-              onChange={(event) =>
-                setLocation(event.target.value)
-              }
-            />
-          </div>
+            {!loading && !error && jobs.length > 0 && (
+              <ul className="stack" style={{ gap: "0.6rem" }}>
+                {jobs.map((job) => (
+                  <li key={job.job_id} className="card" style={{ margin: 0 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                      }}
+                    >
+                      <span className="stat-card__icon">
+                        <IconBriefcase width={16} height={16} />
+                      </span>
+                      <div>
+                        <strong>
+                          {job.title ?? job.job_id}
+                        </strong>
+                        <p className="muted text-sm mt-0">
+                          {job.job_id}
+                          {job.location
+                            ? ` · ${job.location}`
+                            : ""}
+                          {job.job_type
+                            ? ` · ${job.job_type}`
+                            : ""}
+                        </p>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SectionCard>
+        </div>
 
-          <div>
-            <label htmlFor="job-type">Job Type</label>
-            <input
-              id="job-type"
-              name="job_type"
-              value={jobType}
-              onChange={(event) =>
-                setJobType(event.target.value)
-              }
-            />
-          </div>
+        <div className="workflow-layout__aside">
+          <SectionCard
+            title="Create Job"
+            subtitle="Add a new position to screen candidates against."
+          >
+            <form onSubmit={handleCreateJob}>
+              <div className="field">
+                <label htmlFor="job-title">Job Title</label>
+                <input
+                  id="job-title"
+                  name="title"
+                  value={title}
+                  onChange={(event) =>
+                    setTitle(event.target.value)
+                  }
+                />
+              </div>
 
-          <div>
-            <label htmlFor="job-experience">
-              Required Experience (months)
-            </label>
-            <input
-              id="job-experience"
-              name="required_experience_months"
-              type="number"
-              min="0"
-              value={experienceMonths}
-              onChange={(event) =>
-                setExperienceMonths(Number(event.target.value))
-              }
-            />
-          </div>
+              <div className="field">
+                <label htmlFor="job-description">
+                  Description
+                </label>
+                <textarea
+                  id="job-description"
+                  name="description"
+                  value={description}
+                  onChange={(event) =>
+                    setDescription(event.target.value)
+                  }
+                />
+              </div>
 
-          <div>
-            <label htmlFor="job-raw-text">
-              Raw Job Description
-            </label>
-            <textarea
-              id="job-raw-text"
-              name="raw_text"
-              value={rawText}
-              onChange={(event) =>
-                setRawText(event.target.value)
-              }
-              required
-            />
-          </div>
+              <div className="form-grid">
+                <div className="field">
+                  <label htmlFor="job-location">
+                    Location
+                  </label>
+                  <input
+                    id="job-location"
+                    name="location"
+                    value={location}
+                    onChange={(event) =>
+                      setLocation(event.target.value)
+                    }
+                  />
+                </div>
 
-          <button type="submit" disabled={creating}>
-            {creating ? "Creating..." : "Create Job"}
-          </button>
-        </form>
-      </section>
+                <div className="field">
+                  <label htmlFor="job-type">Job Type</label>
+                  <input
+                    id="job-type"
+                    name="job_type"
+                    value={jobType}
+                    onChange={(event) =>
+                      setJobType(event.target.value)
+                    }
+                  />
+                </div>
+              </div>
 
-      <section>
-        <h2>Jobs</h2>
+              <div className="field">
+                <label htmlFor="job-experience">
+                  Required Experience (months)
+                </label>
+                <input
+                  id="job-experience"
+                  name="required_experience_months"
+                  type="number"
+                  min="0"
+                  value={experienceMonths}
+                  onChange={(event) =>
+                    setExperienceMonths(
+                      Number(event.target.value),
+                    )
+                  }
+                />
+              </div>
 
-        {loading && <p>Loading jobs...</p>}
+              <div className="field">
+                <label htmlFor="job-raw-text">
+                  Raw Job Description
+                </label>
+                <textarea
+                  id="job-raw-text"
+                  name="raw_text"
+                  value={rawText}
+                  onChange={(event) =>
+                    setRawText(event.target.value)
+                  }
+                  rows={6}
+                  required
+                />
+                <p className="field-hint">
+                  Used by the AI screening pipeline to match
+                  candidates against this role.
+                </p>
+              </div>
 
-        {error && <p>{error}</p>}
+              {formError && (
+                <p role="alert" className="validation-message">
+                  {formError}
+                </p>
+              )}
 
-        {!loading && !error && jobs.length === 0 && (
-          <p>No jobs available.</p>
-        )}
-
-        {!loading && !error && jobs.length > 0 && (
-          <ul>
-            {jobs.map((job) => (
-              <li key={job.job_id}>
-                <strong>{job.title ?? job.job_id}</strong>
-
-                {job.location && (
-                  <span> — {job.location}</span>
+              <button
+                type="submit"
+                className="btn btn-primary btn-block"
+                disabled={creating}
+              >
+                {creating ? (
+                  <span
+                    className="spinner-inline"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <IconPlus width={16} height={16} />
                 )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                {creating ? "Creating..." : "Create Job"}
+              </button>
+            </form>
+          </SectionCard>
+        </div>
+      </div>
     </main>
   );
 }

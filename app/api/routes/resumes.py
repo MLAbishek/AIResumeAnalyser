@@ -157,7 +157,9 @@ def list_resumes_endpoint(
             selectinload(Resume.experiences),
             selectinload(Resume.education),
         )
-        .order_by(Resume.id)
+        .order_by(
+            Resume.created_at.desc(), Resume.id.desc()
+        )
         .offset(offset)
         .limit(limit)
         .all()

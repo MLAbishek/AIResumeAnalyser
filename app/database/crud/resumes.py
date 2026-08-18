@@ -22,6 +22,7 @@ def create_resume(
     technologies: list | None = None,
     total_experience_months: int = 0,
     raw_text: str | None = None,
+    owner_user_id: int | None = None,
 ) -> Resume:
     resume = Resume(
         resume_id=resume_id,
@@ -35,6 +36,7 @@ def create_resume(
         technologies=technologies or [],
         total_experience_months=total_experience_months,
         raw_text=raw_text,
+        owner_user_id=owner_user_id,
     )
 
     db.add(resume)
@@ -42,6 +44,20 @@ def create_resume(
     db.refresh(resume)
 
     return resume
+
+
+def list_resumes_for_owner(
+    db: Session,
+    *,
+    owner_user_id: int,
+) -> list[Resume]:
+    statement = (
+        select(Resume)
+        .where(Resume.owner_user_id == owner_user_id)
+        .order_by(Resume.created_at.desc())
+    )
+
+    return list(db.scalars(statement).all())
 
 
 def get_resume_by_id(
@@ -70,7 +86,9 @@ def list_resumes(
 ) -> list[Resume]:
     statement = (
         select(Resume)
-        .order_by(Resume.id)
+        .order_by(
+            Resume.created_at.desc(), Resume.id.desc()
+        )
         .offset(offset)
         .limit(limit)
     )

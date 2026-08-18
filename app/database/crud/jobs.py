@@ -20,6 +20,8 @@ def create_job(
     education_requirements: list | None = None,
     required_certifications: list | None = None,
     required_experience_months: int = 0,
+    created_by_user_id: int | None = None,
+    status: str = "open",
 ) -> Job:
     job = Job(
         job_id=job_id,
@@ -35,9 +37,40 @@ def create_job(
         education_requirements=education_requirements or [],
         required_certifications=required_certifications or [],
         required_experience_months=required_experience_months,
+        created_by_user_id=created_by_user_id,
+        status=status,
     )
 
     db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    return job
+
+
+def list_open_jobs(
+    db: Session,
+    *,
+    offset: int = 0,
+    limit: int = 100,
+) -> list[Job]:
+    statement = (
+        select(Job)
+        .where(Job.status == "open")
+        .order_by(Job.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+
+    return list(db.scalars(statement).all())
+
+
+def close_job(
+    db: Session,
+    job: Job,
+) -> Job:
+    job.status = "closed"
+
     db.commit()
     db.refresh(job)
 
@@ -68,7 +101,7 @@ def list_jobs(
 ) -> list[Job]:
     statement = (
         select(Job)
-        .order_by(Job.id)
+        .order_by(Job.created_at.desc(), Job.id.desc())
         .offset(offset)
         .limit(limit)
     )

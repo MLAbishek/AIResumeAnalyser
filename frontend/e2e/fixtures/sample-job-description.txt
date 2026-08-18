@@ -1,0 +1,17 @@
+Backend Engineer
+
+SUMMARY
+We are hiring a Backend Engineer to build and maintain services using
+Python and PostgreSQL.
+
+REQUIRED SKILLS
+Python, PostgreSQL, REST APIs, Docker
+
+PREFERRED SKILLS
+Kubernetes, Redis
+
+EXPERIENCE
+Minimum 24 months of professional backend development experience.
+
+EDUCATION
+Bachelor of Science in Computer Science or related field.
