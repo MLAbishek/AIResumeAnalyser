@@ -208,7 +208,9 @@ export default function FeedbackPanel({
         <SectionCard title="AI Match Feedback">
           <p style={{ margin: 0 }}>
             {String(
-              explanation.summary ?? "No summary available.",
+              explanation.narrative ??
+                explanation.summary ??
+                "No summary available.",
             )}
           </p>
         </SectionCard>

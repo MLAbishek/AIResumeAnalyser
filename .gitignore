@@ -28,7 +28,7 @@ htmlcov/
 .mypy_cache/
 .pyre/
 .ruff_cache/
-
+scripts/
 # IDEs
 .vscode/
 .idea/
@@ -53,6 +53,9 @@ tmp/
 data/processed/
 data/normalized/
 data/evaluation/generated/
+
+# Uploaded candidate resume files (real PII) - never committed
+data/storage/
 
 # Local databases
 *.db

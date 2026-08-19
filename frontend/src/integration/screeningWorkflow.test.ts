@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiRequest } from "../api/client";
+import { apiRequest, ApiError } from "../api/client";
 import { createJob } from "../api/jobs";
 import { createResume } from "../api/resumes";
 import { screenCandidates } from "../api/screening";
@@ -13,15 +13,38 @@ import type { components } from "../types/api";
 type TokenResponse =
   components["schemas"]["TokenResponse"];
 
+// This test hits the real backend/database directly (no mocking),
+// so it must not depend on a pre-existing account seeded outside
+// this file - a clean database (e.g. after a dev DB reset) must not
+// break it. Register the fixture account on demand and tolerate a
+// 409 if a previous run already created it.
 async function getTestToken(): Promise<string> {
+  const email = "frontend-test@example.com";
+  const password = "FrontendTest123!";
+
+  try {
+    await apiRequest("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        email,
+        password,
+        role: "recruiter",
+      }),
+    });
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 409) {
+      throw err;
+    }
+  }
+
   const response =
     await apiRequest<TokenResponse>(
       "/api/auth/login",
       {
         method: "POST",
         body: JSON.stringify({
-          email: "frontend-test@example.com",
-          password: "FrontendTest123!",
+          email,
+          password,
         }),
       },
     );

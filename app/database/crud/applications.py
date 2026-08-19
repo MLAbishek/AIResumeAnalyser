@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database.models.application import Application
+from app.database.models.resume import Resume
 
 
 def create_application(
@@ -36,7 +37,16 @@ def get_application_by_id(
         application_id,
         options=[
             selectinload(Application.job),
-            selectinload(Application.resume),
+            selectinload(Application.candidate),
+            selectinload(Application.resume).selectinload(
+                Resume.experiences
+            ),
+            selectinload(Application.resume).selectinload(
+                Resume.education
+            ),
+            selectinload(Application.resume).selectinload(
+                Resume.projects
+            ),
             selectinload(Application.screening),
         ],
     )
@@ -64,6 +74,7 @@ def list_applications_for_job(
         select(Application)
         .where(Application.job_id == job_id)
         .options(
+            selectinload(Application.candidate),
             selectinload(Application.resume),
             selectinload(Application.screening),
         )
@@ -85,7 +96,16 @@ def list_applications_for_candidate(
         )
         .options(
             selectinload(Application.job),
-            selectinload(Application.resume),
+            selectinload(Application.candidate),
+            selectinload(Application.resume).selectinload(
+                Resume.experiences
+            ),
+            selectinload(Application.resume).selectinload(
+                Resume.education
+            ),
+            selectinload(Application.resume).selectinload(
+                Resume.projects
+            ),
             selectinload(Application.screening),
         )
         .order_by(Application.applied_at.desc())

@@ -5,6 +5,7 @@ from app.database.models.resume import (
     Resume,
     ResumeEducation,
     ResumeExperience,
+    ResumeProject,
 )
 
 
@@ -20,6 +21,7 @@ def create_resume(
     job_titles: list | None = None,
     organizations: list | None = None,
     technologies: list | None = None,
+    certifications: list | None = None,
     total_experience_months: int = 0,
     raw_text: str | None = None,
     owner_user_id: int | None = None,
@@ -34,6 +36,7 @@ def create_resume(
         job_titles=job_titles or [],
         organizations=organizations or [],
         technologies=technologies or [],
+        certifications=certifications or [],
         total_experience_months=total_experience_months,
         raw_text=raw_text,
         owner_user_id=owner_user_id,
@@ -146,6 +149,28 @@ def add_education(
     db.refresh(education)
 
     return education
+
+
+def add_project(
+    db: Session,
+    *,
+    resume: Resume,
+    name: str,
+    description: str | None = None,
+    technologies: list | None = None,
+) -> ResumeProject:
+    project = ResumeProject(
+        resume_id=resume.id,
+        name=name,
+        description=description,
+        technologies=technologies or [],
+    )
+
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+
+    return project
 
 
 def delete_resume(

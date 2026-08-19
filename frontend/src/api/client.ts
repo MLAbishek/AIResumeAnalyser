@@ -105,3 +105,41 @@ export async function apiRequest<T>(
 
   return data as T;
 }
+
+/**
+ * Fetch a binary response (e.g. an uploaded resume file) with the
+ * same authenticated-request handling as apiRequest, but returning
+ * a Blob instead of parsed JSON/text. Used to load a file into an
+ * in-memory object URL for viewing/downloading - the browser never
+ * makes an unauthenticated request directly to the file endpoint.
+ */
+export async function apiRequestBlob(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Blob> {
+  const { token, headers, ...requestOptions } = options;
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...requestOptions,
+    headers: {
+      ...headers,
+      ...(token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : {}),
+    },
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type");
+
+    const data = contentType?.includes("application/json")
+      ? await response.json()
+      : await response.text();
+
+    throw new ApiError(response.status, data);
+  }
+
+  return response.blob();
+}

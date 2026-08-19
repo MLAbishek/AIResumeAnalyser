@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha1
 from pathlib import Path
 from typing import Sequence
 
@@ -14,23 +15,51 @@ from app.retrieval.vector_retrieval import (
 )
 
 
+def _stable_chunk_id(chunk_id: str) -> int:
+    """
+    Deterministic mapping from a chunk_id string (already a content
+    hash - see ResumeChunker._append_chunk) to a positive int64 FAISS
+    vector id. Using a stable, content-derived id (rather than a
+    sequential position/counter) is what makes add()/remove_ids()
+    safe under concurrent/repeated ingestion: re-adding the exact
+    same chunk content always maps to the exact same id, so it is
+    trivially detectable as "already indexed" instead of silently
+    duplicated.
+    """
+
+    digest = sha1(chunk_id.encode("utf-8")).digest()
+    # 8 bytes -> up to 63 bits, safely within a signed int64 and
+    # always non-negative (FAISS ids must be non-negative).
+    return int.from_bytes(digest[:8], "big") & 0x7FFFFFFFFFFFFFFF
+
+
 class PersistentVectorIndex:
     """
-    Persistent FAISS-backed vector index.
+    Persistent, incrementally-updatable FAISS-backed vector index.
 
     Stores:
-        - FAISS vector index
-        - chunk metadata
+        - FAISS vector index (IndexIDMap2 over IndexFlatIP, so
+          individual vectors can be added/removed by a stable id
+          without rebuilding the whole index)
+        - chunk metadata, keyed by the same stable id
         - embedding dimension
         - model identifier
 
     The actual embedding model is intentionally not persisted.
+
+    Supports:
+        - build(): full (re)build from a batch of embeddings
+        - add(): incremental insertion (new resumes / re-indexing)
+        - remove_resume(): delete all of one resume's chunks
+        - update_resume(): remove_resume() + add() in one step
+        - save()/load(): survive a process restart
+        - search_chunks()/search(): unchanged query contract
     """
 
     INDEX_FILENAME = "index.faiss"
     METADATA_FILENAME = "metadata.json"
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(
         self,
@@ -58,7 +87,7 @@ class PersistentVectorIndex:
         self.aggregation = aggregation
 
         self._index: faiss.Index | None = None
-        self._metadata: list[dict] = []
+        self._metadata: dict[int, dict] = {}
         self._dimension: int | None = None
 
     @property
@@ -81,16 +110,47 @@ class PersistentVectorIndex:
         embeddings: Sequence[ChunkEmbedding],
     ) -> None:
         """
-        Build the FAISS index from chunk embeddings.
+        Replace the entire index with the supplied embeddings.
         """
+        self._index = None
+        self._metadata = {}
+        self._dimension = None
+
         if not embeddings:
-            self._index = None
-            self._metadata = []
-            self._dimension = None
             return
 
+        self.add(embeddings)
+
+    def add(
+        self,
+        embeddings: Sequence[ChunkEmbedding],
+    ) -> int:
+        """
+        Incrementally add chunk embeddings to the index, creating it
+        first if it does not exist yet.
+
+        Chunks whose stable id is already present (i.e. identical
+        chunk content already indexed) are skipped, not duplicated -
+        this is the safety net for a duplicate upload/re-ingestion
+        of unchanged content.
+
+        Returns the number of vectors actually added.
+        """
+        if not embeddings:
+            return 0
+
+        new_embeddings = [
+            embedding
+            for embedding in embeddings
+            if _stable_chunk_id(embedding.chunk_id)
+            not in self._metadata
+        ]
+
+        if not new_embeddings:
+            return 0
+
         vectors = np.asarray(
-            [embedding.vector for embedding in embeddings],
+            [embedding.vector for embedding in new_embeddings],
             dtype=np.float32,
         )
 
@@ -109,43 +169,99 @@ class PersistentVectorIndex:
                 "embeddings must contain only finite values"
             )
 
-        norms = np.linalg.norm(
-            vectors,
-            axis=1,
-            keepdims=True,
-        )
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
 
         if np.any(norms == 0):
             raise ValueError(
                 "embeddings must not contain zero vectors"
             )
 
-        vectors = vectors / norms
         vectors = np.ascontiguousarray(
-            vectors,
+            vectors / norms,
             dtype=np.float32,
         )
 
         dimension = vectors.shape[1]
 
-        index = faiss.IndexFlatIP(dimension)
-        index.add(vectors)
+        if self._index is None:
+            base = faiss.IndexFlatIP(dimension)
+            self._index = faiss.IndexIDMap2(base)
+            self._dimension = dimension
+        elif dimension != self._dimension:
+            raise ValueError(
+                "embedding dimension does not match the "
+                f"existing index dimension ({self._dimension})"
+            )
 
-        self._index = index
-        self._dimension = dimension
+        ids = np.asarray(
+            [
+                _stable_chunk_id(embedding.chunk_id)
+                for embedding in new_embeddings
+            ],
+            dtype=np.int64,
+        )
 
-        self._metadata = [
-            {
+        self._index.add_with_ids(vectors, ids)
+
+        for embedding, vector_id in zip(new_embeddings, ids):
+            self._metadata[int(vector_id)] = {
                 "chunk_id": embedding.chunk_id,
                 "resume_id": embedding.resume_id,
                 "section": embedding.section,
             }
-            for embedding in embeddings
+
+        return len(new_embeddings)
+
+    def remove_resume(self, resume_id: str) -> int:
+        """
+        Remove every indexed chunk belonging to one resume.
+
+        Used both for explicit deletion and as the first step of
+        update_resume() (a resume being re-uploaded/edited gets its
+        old chunk vectors fully replaced, since edited content
+        produces different chunk_ids and would otherwise leave
+        stale orphaned vectors behind).
+
+        Returns the number of vectors removed.
+        """
+        if self._index is None:
+            return 0
+
+        ids_to_remove = [
+            vector_id
+            for vector_id, metadata in self._metadata.items()
+            if metadata["resume_id"] == resume_id
         ]
+
+        if not ids_to_remove:
+            return 0
+
+        self._index.remove_ids(
+            np.asarray(ids_to_remove, dtype=np.int64)
+        )
+
+        for vector_id in ids_to_remove:
+            del self._metadata[vector_id]
+
+        return len(ids_to_remove)
+
+    def update_resume(
+        self,
+        resume_id: str,
+        embeddings: Sequence[ChunkEmbedding],
+    ) -> None:
+        """
+        Replace one resume's indexed chunks with a fresh set -
+        remove_resume() followed by add().
+        """
+        self.remove_resume(resume_id)
+        self.add(embeddings)
 
     def save(self) -> None:
         """
-        Persist the FAISS index and metadata.
+        Persist the FAISS index and metadata atomically (write to a
+        temp file, then rename) so a crash mid-save can never leave
+        a corrupted index/metadata pair on disk.
         """
         if not self.is_built:
             raise ValueError(
@@ -157,27 +273,22 @@ class PersistentVectorIndex:
             exist_ok=True,
         )
 
-        index_path = (
-            self.storage_path
-            / self.INDEX_FILENAME
-        )
+        index_path = self.storage_path / self.INDEX_FILENAME
+        metadata_path = self.storage_path / self.METADATA_FILENAME
 
-        metadata_path = (
-            self.storage_path
-            / self.METADATA_FILENAME
-        )
-
-        faiss.write_index(
-            self._index,
-            str(index_path),
-        )
+        tmp_index_path = self.storage_path / f"{self.INDEX_FILENAME}.tmp"
+        faiss.write_index(self._index, str(tmp_index_path))
+        tmp_index_path.replace(index_path)
 
         metadata = {
             "version": self.VERSION,
             "model_name": self.model_name,
             "dimension": self._dimension,
             "aggregation": self.aggregation,
-            "vectors": self._metadata,
+            "vectors": {
+                str(vector_id): entry
+                for vector_id, entry in self._metadata.items()
+            },
         }
 
         temporary_metadata_path = (
@@ -244,14 +355,9 @@ class PersistentVectorIndex:
 
         dimension = metadata.get("dimension")
 
-        if dimension != index.d:
-            raise ValueError(
-                "Vector index dimension does not match metadata"
-            )
-
         vectors_metadata = metadata.get(
             "vectors",
-            [],
+            {},
         )
 
         if len(vectors_metadata) != index.ntotal:
@@ -262,7 +368,22 @@ class PersistentVectorIndex:
 
         self._index = index
         self._dimension = int(dimension)
-        self._metadata = vectors_metadata
+        self._metadata = {
+            int(vector_id): entry
+            for vector_id, entry in vectors_metadata.items()
+        }
+
+    def try_load(self) -> bool:
+        """
+        Load the persisted index if it exists; return whether a
+        load happened. Convenience for service startup, where a
+        first-ever run has no index on disk yet.
+        """
+        try:
+            self.load()
+            return True
+        except FileNotFoundError:
+            return False
 
     def search_chunks(
         self,
@@ -304,21 +425,21 @@ class PersistentVectorIndex:
             dtype=np.float32,
         )
 
-        scores, indices = self._index.search(
+        scores, ids = self._index.search(
             query,
             self._index.ntotal,
         )
 
         results: list[VectorChunkResult] = []
 
-        for score, index_position in zip(
+        for score, vector_id in zip(
             scores[0],
-            indices[0],
+            ids[0],
         ):
-            if index_position < 0:
+            if vector_id < 0:
                 continue
 
-            metadata = self._metadata[index_position]
+            metadata = self._metadata[int(vector_id)]
 
             results.append(
                 VectorChunkResult(

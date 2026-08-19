@@ -1,19 +1,9 @@
 from app.core.schemas import CanonicalJob, CanonicalResume
+from app.normalization.education_normalizer import (
+    EducationNormalizer,
+)
 
-
-def _normalize(value: str) -> str:
-    return " ".join(value.lower().strip().split())
-
-
-def _matches(candidate: str, requirement: str) -> bool:
-    candidate = _normalize(candidate)
-    requirement = _normalize(requirement)
-
-    return (
-        candidate == requirement
-        or candidate in requirement
-        or requirement in candidate
-    )
+_education_normalizer = EducationNormalizer()
 
 
 def score_education(
@@ -44,27 +34,12 @@ def score_education(
 
     for requirement in requirements:
         for education in resume.education:
-
-            degree_match = (
-                requirement.degree is None
-                or _matches(
-                    education.degree,
-                    requirement.degree,
-                )
-            )
-
-            field_match = (
-                requirement.field_of_study is None
-                or (
-                    education.field_of_study
-                    and _matches(
-                        education.field_of_study,
-                        requirement.field_of_study,
-                    )
-                )
-            )
-
-            if degree_match and field_match:
+            if _education_normalizer.requirement_satisfied(
+                requirement_degree=requirement.degree,
+                requirement_field=requirement.field_of_study,
+                candidate_degree=education.degree,
+                candidate_field=education.field_of_study,
+            ):
                 matched += 1
                 break
 

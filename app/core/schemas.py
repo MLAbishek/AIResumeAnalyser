@@ -24,6 +24,7 @@ class JobDescription(BaseModel):
     preferred_skills: list[str] = Field(default_factory=list)
 
     required_experience_years: Optional[float] = None
+    max_experience_years: Optional[float] = None
 
     education: list[str] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
@@ -52,10 +53,18 @@ class Education(BaseModel):
     end_date: Optional[str] = None
 
 
+class Project(BaseModel):
+    name: str
+    description: Optional[str] = None
+    technologies: list[str] = Field(default_factory=list)
+
+
 class Resume(BaseModel):
     resume_id: str
 
     name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
     summary: Optional[str] = None
 
     skills: list[str] = Field(default_factory=list)
@@ -64,7 +73,7 @@ class Resume(BaseModel):
     education: list[Education] = Field(default_factory=list)
 
     certifications: list[str] = Field(default_factory=list)
-    projects: list[str] = Field(default_factory=list)
+    projects: list[Project] = Field(default_factory=list)
 
     job_titles: list[str] = Field(default_factory=list)
 
@@ -208,6 +217,10 @@ class CanonicalJob(BaseModel):
     )
 
     preferred_technologies: list[str] = Field(
+        default_factory=list
+    )
+
+    responsibilities: list[str] = Field(
         default_factory=list
     )
 

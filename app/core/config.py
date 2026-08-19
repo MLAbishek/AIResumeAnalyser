@@ -33,8 +33,19 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     
     # Models
-    embedding_model: str = ""
+    embedding_model: str = "BAAI/bge-m3"
     llm_model: str = ""
+
+    # LLM explanation generation (OpenRouter, OpenAI-compatible API).
+    # The LLM is an explanation layer only - it never computes
+    # scores/eligibility/decisions. Disabled by default so that
+    # existing/automated tests never make live network calls; the
+    # deployed .env used for the live demo turns this on explicitly.
+    enable_llm_explanations: bool = False
+    openrouter_api_key: str = ""
+    openrouter_model: str = "openai/gpt-oss-20b:free"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    llm_timeout_seconds: float = Field(default=15.0, gt=0.0)
 
     # Retrieval / ranking
     top_k: int = Field(default=10, ge=1)

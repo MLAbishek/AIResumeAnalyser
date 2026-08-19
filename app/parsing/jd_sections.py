@@ -84,6 +84,10 @@ SECTION_ALIASES = {
         "perks",
         "what we offer",
         "employee benefits",
+        "what you'll gain",
+        "what you will gain",
+        "what you'll get",
+        "what you'll learn",
     },
     "location": {
         "location",
@@ -102,6 +106,10 @@ SECTION_ALIASES = {
 def normalize_heading(text: str) -> str:
     """Normalize a potential section heading."""
     text = text.strip().lower()
+    # PDFs commonly use "smart" typographic quotes - normalize to
+    # plain ASCII so e.g. "What You'll Gain" matches the alias set
+    # regardless of which apostrophe character the source used.
+    text = text.replace("’", "'").replace("‘", "'")
     text = re.sub(r"[:\-–—]+$", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()

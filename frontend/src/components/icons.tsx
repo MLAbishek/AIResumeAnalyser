@@ -205,3 +205,22 @@ export function IconUpload(props: IconProps) {
     </svg>
   );
 }
+
+export function IconDownload(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 4v12M12 16 7 11M12 16l5-5" />
+      <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </svg>
+  );
+}
+
+export function IconGraduationCap(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M2 9l10-5 10 5-10 5-10-5Z" />
+      <path d="M6 11.5V16c0 1.1 2.7 3 6 3s6-1.9 6-3v-4.5" />
+      <path d="M22 9v6" />
+    </svg>
+  );
+}

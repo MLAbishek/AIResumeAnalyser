@@ -19,7 +19,8 @@ from app.core.schemas import (
 from app.parsing.jd_extractors import (
     extract_certifications,
     extract_education,
-    extract_experience_years,
+    extract_education_from_text,
+    extract_experience_range,
     extract_job_type,
     extract_location,
     extract_preferred_skills,
@@ -69,15 +70,26 @@ class JDParser:
 
         job_id = self._generate_job_id(document)
 
+        minimum_experience_years, maximum_experience_years = (
+            extract_experience_range(raw_text)
+        )
+
         return JobDescription(
             job_id=job_id,
             title=title,
             summary=extract_summary(sections),
             required_skills=extract_required_skills(sections),
             preferred_skills=extract_preferred_skills(sections),
-            required_experience_years=extract_experience_years(raw_text),
-            education=extract_education(
-                sections.get("education", "")
+            required_experience_years=minimum_experience_years,
+            max_experience_years=maximum_experience_years,
+            education=(
+                extract_education(
+                    sections.get("education", "")
+                )
+                # Some JDs state education requirements inline
+                # (e.g. an "Eligibility:" line) rather than under a
+                # dedicated "Education:" heading.
+                or extract_education_from_text(raw_text)
             ),
             certifications=extract_certifications(
                 sections.get("certifications", "")

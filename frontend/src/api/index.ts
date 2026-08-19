@@ -39,6 +39,7 @@ export {
 } from "./candidateJobs";
 
 export {
+  getApplicationResumeBlob,
   getJobApplication,
   listJobApplications,
   updateApplicationStatus,

@@ -6,6 +6,12 @@ from app.filtering.schemas import (
     LocationAuthorizationResult,
     EligibilityResult,
 )
+from app.normalization.education_normalizer import (
+    EducationNormalizer,
+)
+from app.normalization.normalizer_utils import (
+    split_requirement_group,
+)
 
 
 def check_skills(
@@ -23,10 +29,31 @@ def check_skills(
     reasons = []
 
     for skill in criteria.required_skills:
-        if skill.lower().strip() in candidate_skills_normalized:
-            matching.append(skill)
+        # A plain entry (no "|") is a single mandatory skill, same
+        # as before. An entry encoding alternatives
+        # ("java|python|c++|c#" - see split_requirement_group()) is
+        # satisfied by ANY ONE of them, e.g. "at least one language
+        # such as Java, Python, C++, or C#" - not all four.
+        alternatives = split_requirement_group(skill)
+
+        matched_alternative = next(
+            (
+                alternative
+                for alternative in alternatives
+                if alternative.lower().strip()
+                in candidate_skills_normalized
+            ),
+            None,
+        )
+
+        if matched_alternative is not None:
+            matching.append(matched_alternative)
         else:
-            missing.append(skill)
+            missing.append(
+                " or ".join(alternatives)
+                if len(alternatives) > 1
+                else alternatives[0]
+            )
 
     eligible = len(missing) == 0
 
@@ -88,28 +115,14 @@ def check_education_certification(
 
     if criteria.required_education:
         education_match = False
-
-        candidate_education_normalized = (
-            candidate_education.lower().strip()
-        )
+        normalizer = EducationNormalizer()
 
         for requirement in criteria.required_education:
-            degree_match = True
-            field_match = True
-
-            if requirement.degree:
-                degree_match = (
-                    requirement.degree.lower().strip()
-                    in candidate_education_normalized
-                )
-
-            if requirement.field_of_study:
-                field_match = (
-                    requirement.field_of_study.lower().strip()
-                    in candidate_education_normalized
-                )
-
-            if degree_match and field_match:
+            if normalizer.requirement_satisfied(
+                requirement_degree=requirement.degree,
+                requirement_field=requirement.field_of_study,
+                candidate_degree=candidate_education,
+            ):
                 education_match = True
                 break
 

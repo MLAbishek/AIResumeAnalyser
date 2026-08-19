@@ -421,6 +421,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{job_id}/applications/{application_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Application Resume
+         * @description Stream the candidate's actual uploaded resume file to an
+         *     authorized recruiter.
+         *
+         *     Authorization mirrors get_job_application: the recruiter must
+         *     own the job, and the application must belong to that job - the
+         *     candidate's resume is only reachable through that chain, never
+         *     by an application_id alone.
+         */
+        get: operations["download_application_resume_api_jobs__job_id__applications__application_id__resume_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications/{application_id}/status": {
         parameters: {
             query?: never;
@@ -454,6 +480,8 @@ export interface components {
             resume_id: string;
             /** Candidate Name */
             candidate_name: string | null;
+            /** Candidate Email */
+            candidate_email?: string | null;
             /**
              * Status
              * @enum {string}
@@ -470,6 +498,7 @@ export interface components {
              */
             updated_at: string;
             screening: components["schemas"]["ScreeningResultResponse"] | null;
+            resume?: components["schemas"]["ResumeResponse"] | null;
         };
         /** ApplicationStatusUpdateRequest */
         ApplicationStatusUpdateRequest: {
@@ -614,6 +643,8 @@ export interface components {
             }[];
             /** Required Certifications */
             required_certifications?: string[];
+            /** Responsibilities */
+            responsibilities?: string[];
             /**
              * Required Experience Months
              * @default 0
@@ -675,6 +706,8 @@ export interface components {
             }[];
             /** Required Certifications */
             required_certifications: string[];
+            /** Responsibilities */
+            responsibilities: string[];
             /** Required Experience Months */
             required_experience_months: number;
             /**
@@ -693,6 +726,15 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** Project */
+        Project: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Technologies */
+            technologies?: string[];
+        };
         /** RecruiterApplicationListItem */
         RecruiterApplicationListItem: {
             /** Application Id */
@@ -701,6 +743,8 @@ export interface components {
             resume_id: string;
             /** Candidate Name */
             candidate_name: string | null;
+            /** Candidate Email */
+            candidate_email?: string | null;
             /**
              * Status
              * @enum {string}
@@ -719,6 +763,11 @@ export interface components {
             eligible: boolean | null;
             /** Decision */
             decision: string | null;
+            /**
+             * Skills
+             * @default []
+             */
+            skills: string[];
         };
         /** RecruiterApplicationListResponse */
         RecruiterApplicationListResponse: {
@@ -751,6 +800,10 @@ export interface components {
             resume_id: string;
             /** Name */
             name?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Phone */
+            phone?: string | null;
             /** Summary */
             summary?: string | null;
             /** Skills */
@@ -762,7 +815,7 @@ export interface components {
             /** Certifications */
             certifications?: string[];
             /** Projects */
-            projects?: string[];
+            projects?: components["schemas"]["Project"][];
             /** Job Titles */
             job_titles?: string[];
             /** Total Experience Years */
@@ -790,6 +843,8 @@ export interface components {
             organizations?: string[];
             /** Technologies */
             technologies?: string[];
+            /** Certifications */
+            certifications?: string[];
             /**
              * Total Experience Months
              * @default 0
@@ -801,6 +856,8 @@ export interface components {
             experiences?: components["schemas"]["ResumeExperienceCreate"][];
             /** Education */
             education?: components["schemas"]["ResumeEducationCreate"][];
+            /** Projects */
+            projects?: components["schemas"]["ResumeProjectCreate"][];
         };
         /** ResumeEducationCreate */
         ResumeEducationCreate: {
@@ -876,6 +933,26 @@ export interface components {
             /** Id */
             id: number;
         };
+        /** ResumeProjectCreate */
+        ResumeProjectCreate: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Technologies */
+            technologies?: string[];
+        };
+        /** ResumeProjectResponse */
+        ResumeProjectResponse: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Technologies */
+            technologies?: string[];
+            /** Id */
+            id: number;
+        };
         /** ResumeResponse */
         ResumeResponse: {
             /** Resume Id */
@@ -896,6 +973,8 @@ export interface components {
             organizations: string[];
             /** Technologies */
             technologies: string[];
+            /** Certifications */
+            certifications: string[];
             /** Total Experience Months */
             total_experience_months: number;
             /** Raw Text */
@@ -904,6 +983,8 @@ export interface components {
             experiences: components["schemas"]["ResumeExperienceResponse"][];
             /** Education */
             education: components["schemas"]["ResumeEducationResponse"][];
+            /** Projects */
+            projects: components["schemas"]["ResumeProjectResponse"][];
         };
         /** ScreeningListResponse */
         ScreeningListResponse: {
@@ -1823,6 +1904,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_application_resume_api_jobs__job_id__applications__application_id__resume_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                application_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

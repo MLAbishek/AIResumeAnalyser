@@ -86,6 +86,12 @@ class Resume(Base):
         nullable=True,
     )
 
+    certifications: Mapped[list] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=False,
+    )
+
     # Set for resumes a candidate uploads themselves through the
     # candidate portal. NULL for resumes created via the recruiter
     # JSON endpoint (no individual candidate owner).
@@ -114,6 +120,11 @@ class Resume(Base):
     )
 
     education: Mapped[list["ResumeEducation"]] = relationship(
+        back_populates="resume",
+        cascade="all, delete-orphan",
+    )
+
+    projects: Mapped[list["ResumeProject"]] = relationship(
         back_populates="resume",
         cascade="all, delete-orphan",
     )
@@ -213,4 +224,41 @@ class ResumeEducation(Base):
 
     resume: Mapped["Resume"] = relationship(
         back_populates="education",
+    )
+
+
+class ResumeProject(Base):
+    __tablename__ = "resume_projects"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    resume_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("resumes.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    technologies: Mapped[list] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=False,
+    )
+
+    resume: Mapped["Resume"] = relationship(
+        back_populates="projects",
     )

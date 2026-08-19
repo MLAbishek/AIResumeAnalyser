@@ -499,6 +499,57 @@ def test_check_eligibility_all_requirements_match():
     assert result.location_authorization.eligible is True
 
 
+def test_empty_required_certifications_does_not_block_eligibility():
+    # required_certifications=[] must be treated as "no
+    # requirement", not as a requirement the candidate silently
+    # fails.
+    criteria = EligibilityCriteria(
+        required_skills=["Python"],
+        required_certifications=[],
+    )
+
+    class Candidate:
+        skills = ["Python"]
+        experience_months = 0
+        education = ""
+        certifications = []
+        location = ""
+        authorization = True
+
+    result = check_eligibility(
+        candidate=Candidate(),
+        criteria=criteria,
+    )
+
+    assert result.eligible is True
+    assert result.education_certification.eligible is True
+
+
+def test_zero_minimum_experience_does_not_block_eligibility():
+    # minimum_experience_months=0 (unset/not specified) must not
+    # reject a candidate for having "too little" experience.
+    criteria = EligibilityCriteria(
+        required_skills=["Python"],
+        minimum_experience_months=0,
+    )
+
+    class Candidate:
+        skills = ["Python"]
+        experience_months = 0
+        education = ""
+        certifications = []
+        location = ""
+        authorization = True
+
+    result = check_eligibility(
+        candidate=Candidate(),
+        criteria=criteria,
+    )
+
+    assert result.eligible is True
+    assert result.experience_match.eligible is True
+
+
 def test_check_eligibility_fails_missing_skill():
 
     criteria = EligibilityCriteria(

@@ -1,4 +1,7 @@
 from app.core.schemas import CanonicalJob, CanonicalResume
+from app.normalization.normalizer_utils import (
+    split_requirement_group,
+)
 
 
 def _normalize(value: str) -> str:
@@ -54,9 +57,16 @@ def score_skills(
         if not requirements:
             return 1.0
 
+        # A requirement entry may encode alternatives
+        # ("java|python|c++|c#") - it counts as covered if the
+        # candidate matches ANY ONE of them, consistent with
+        # eligibility's check_skills() and gap analysis.
         matched = sum(
             any(
-                _matches(requirement, candidate)
+                _matches(alternative, candidate)
+                for alternative in split_requirement_group(
+                    requirement
+                )
                 for candidate in candidate_skills
             )
             for requirement in requirements

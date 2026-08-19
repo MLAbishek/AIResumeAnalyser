@@ -1,7 +1,28 @@
+import logging
 import math
 import re
 
+from app.core.config import settings
 from app.core.schemas import CanonicalJob, CanonicalResume
+
+logger = logging.getLogger(__name__)
+
+# Lazily constructed, process-wide singleton so the BGE-M3 model is
+# loaded at most once per process, not once per screening request.
+_semantic_service = None
+
+
+def _get_semantic_service():
+    global _semantic_service
+
+    if _semantic_service is None:
+        from app.services.semantic_matching_service import (
+            SemanticMatchingService,
+        )
+
+        _semantic_service = SemanticMatchingService()
+
+    return _semantic_service
 
 
 def _tokens(text: str) -> set[str]:
@@ -69,10 +90,16 @@ def score_vector_similarity(
     )
 
 
-def score_semantic(
+def _lexical_overlap_score(
     job: CanonicalJob,
     resume: CanonicalResume,
 ) -> float:
+    """
+    Deterministic lexical (Jaccard token-overlap) fallback. Used ONLY
+    when genuine embedding-based semantic scoring is disabled or
+    fails - never presented as an embedding score (see
+    score_semantic()'s explicit mode logging).
+    """
 
     job_text = " ".join(
         filter(
@@ -122,3 +149,49 @@ def score_semantic(
         len(intersection) / len(union),
         4,
     )
+
+
+def score_semantic(
+    job: CanonicalJob,
+    resume: CanonicalResume,
+) -> float:
+    """
+    Semantic similarity between a JD and a candidate resume, in
+    [0, 1].
+
+    Genuinely computed from BGE-M3 embeddings + FAISS vector
+    similarity when semantic search is enabled and the embedding
+    path succeeds (see app/services/semantic_matching_service.py).
+    Falls back to a clearly-logged deterministic lexical (token
+    overlap) score - never silently - if semantic search is
+    disabled, or if embedding generation/vector retrieval fails for
+    any reason. Ranking must keep working either way.
+    """
+
+    if not settings.enable_semantic_search:
+        logger.debug(
+            "Semantic scoring using lexical fallback: "
+            "disabled by configuration."
+        )
+        return _lexical_overlap_score(job, resume)
+
+    try:
+        result = _get_semantic_service().score(job, resume)
+
+        if result.mode == "embedding":
+            return result.score
+
+        logger.warning(
+            "Semantic scoring fell back to lexical overlap. "
+            "reason=%s",
+            result.reason,
+        )
+        return _lexical_overlap_score(job, resume)
+
+    except Exception as exc:
+        logger.warning(
+            "Semantic embedding scoring failed; using lexical "
+            "fallback. error_type=%s",
+            type(exc).__name__,
+        )
+        return _lexical_overlap_score(job, resume)

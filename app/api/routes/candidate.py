@@ -1,4 +1,6 @@
+import logging
 import tempfile
+from datetime import date
 from pathlib import Path
 
 from fastapi import (
@@ -12,7 +14,7 @@ from fastapi import (
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_db
+from app.api.dependencies import get_db, get_resume_index_service
 from app.api.schemas.applications import ApplicationResponse
 from app.api.schemas.candidate import (
     ApplyRequest,
@@ -31,18 +33,31 @@ from app.database.crud.applications import (
 )
 from app.database.crud.jobs import get_job_by_id, list_open_jobs
 from app.database.crud.resumes import (
+    add_education,
+    add_experience,
+    add_project,
     create_resume,
     get_resume_by_id,
     list_resumes_for_owner,
 )
 from app.ingestion.document_validator import DocumentValidator
 from app.ingestion.resume_loader import ResumeLoader
+from app.parsing.resume_extractors import (
+    calculate_duration_months,
+    parse_date,
+)
 from app.parsing.resume_parse import ResumeParser
 from app.services.candidate_match_service import (
     CandidateMatchService,
     screening_to_response,
 )
+from app.services.resume_document_storage import (
+    get_resume_storage,
+)
+from app.services.resume_index_service import ResumeIndexService
+from app.storage.exceptions import DocumentAlreadyExistsError
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/candidate",
@@ -129,6 +144,9 @@ async def upload_resume(
     current_user: User = Depends(
         require_role("candidate")
     ),
+    resume_index_service: ResumeIndexService | None = Depends(
+        get_resume_index_service
+    ),
 ):
     suffix = Path(file.filename or "").suffix.lower()
 
@@ -213,11 +231,14 @@ async def upload_resume(
                 db,
                 resume_id=resume_id,
                 name=parsed.name,
+                email=parsed.email,
+                phone=parsed.phone,
                 summary=parsed.summary,
                 skills=parsed.skills,
                 job_titles=parsed.job_titles,
                 organizations=[],
                 technologies=[],
+                certifications=parsed.certifications,
                 total_experience_months=int(
                     round(
                         (parsed.total_experience_years or 0)
@@ -234,6 +255,104 @@ async def upload_resume(
                 status_code=409,
                 detail="Resume could not be saved.",
             ) from exc
+
+        # Persist structured experience/education/project entries
+        # the parser extracted. Entries missing a required field
+        # (e.g. no institution could be resolved) are skipped rather
+        # than saved with a fabricated placeholder - the full text
+        # is still preserved in raw_text either way.
+        for experience in parsed.experience:
+            if not experience.role or not experience.company:
+                continue
+
+            start_date = parse_date(
+                experience.start_date
+            ) if experience.start_date else None
+
+            if start_date is None:
+                continue
+
+            end_date = (
+                parse_date(experience.end_date)
+                if experience.end_date
+                else None
+            ) or date.today()
+
+            duration_months = calculate_duration_months(
+                experience.start_date,
+                experience.end_date,
+            )
+
+            add_experience(
+                db,
+                resume=resume,
+                job_title=experience.role,
+                company=experience.company,
+                start_date=start_date,
+                end_date=end_date,
+                duration_months=duration_months or 0,
+            )
+
+        for education in parsed.education:
+            if not education.degree or not education.institution:
+                continue
+
+            add_education(
+                db,
+                resume=resume,
+                degree=education.degree,
+                institution=education.institution,
+                field_of_study=education.field,
+                start_date=(
+                    parse_date(education.start_date)
+                    if education.start_date
+                    else None
+                ),
+                end_date=(
+                    parse_date(education.end_date)
+                    if education.end_date
+                    else None
+                ),
+            )
+
+        for project in parsed.projects:
+            add_project(
+                db,
+                resume=resume,
+                name=project.name,
+                description=project.description,
+                technologies=project.technologies,
+            )
+
+        try:
+            get_resume_storage().store_raw(
+                tmp_path,
+                document_id=resume_id,
+            )
+        except DocumentAlreadyExistsError:
+            # Same content already persisted under this ID
+            # (e.g. a retried request) - nothing to do.
+            pass
+
+        # Index into the persistent semantic-retrieval corpus. This
+        # is an enhancement (bulk candidate discovery) - a failure
+        # here must never fail the upload itself, since the resume
+        # is already safely persisted at this point. resume_index_
+        # service is None only when the app's lifespan hasn't run
+        # (e.g. a test driven by a bare TestClient) - see
+        # get_resume_index_service()'s docstring.
+        if resume_index_service is not None:
+            try:
+                resume_index_service.index_parsed_resume(
+                    resume_id, parsed
+                )
+            except Exception:
+                logger.warning(
+                    "Resume vector indexing failed; upload still "
+                    "succeeded. resume_id=%s",
+                    resume_id,
+                    exc_info=False,
+                )
 
         return resume
 
@@ -405,10 +524,12 @@ def apply_to_job(
         job_title=job.title,
         resume_id=resume.resume_id,
         candidate_name=resume.name,
+        candidate_email=current_user.email,
         status=application.status,
         applied_at=application.applied_at,
         updated_at=application.updated_at,
         screening=screening_to_response(screening),
+        resume=ResumeResponse.model_validate(resume),
     )
 
 
@@ -454,10 +575,14 @@ def list_my_applications(
                 job_title=application.job.title,
                 resume_id=application.resume.resume_id,
                 candidate_name=application.resume.name,
+                candidate_email=application.candidate.email,
                 status=application.status,
                 applied_at=application.applied_at,
                 updated_at=application.updated_at,
                 screening=screening_response,
+                resume=ResumeResponse.model_validate(
+                    application.resume
+                ),
             )
         )
 
@@ -507,8 +632,12 @@ def get_my_application(
         job_title=application.job.title,
         resume_id=application.resume.resume_id,
         candidate_name=application.resume.name,
+        candidate_email=application.candidate.email,
         status=application.status,
         applied_at=application.applied_at,
         updated_at=application.updated_at,
         screening=screening_response,
+        resume=ResumeResponse.model_validate(
+            application.resume
+        ),
     )

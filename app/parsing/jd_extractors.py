@@ -90,28 +90,63 @@ def extract_job_type(text: str) -> str | None:
     return None
 
 
-def extract_experience_years(text: str) -> float | None:
+def extract_experience_range(
+    text: str,
+) -> tuple[float | None, float | None]:
     """
-    Extract minimum required experience.
+    Extract required experience as a (minimum, maximum) range in
+    years. maximum is None when the JD states no upper bound (a
+    plain "N years"/"N+ years" requirement).
 
     Examples:
-        3 years of experience
-        3+ years experience
-        minimum 3 years
-        at least 2 years
+        "3 years of experience"    -> (3.0, None)
+        "3+ years experience"      -> (3.0, None)
+        "minimum 3 years"          -> (3.0, None)
+        "at least 2 years"         -> (2.0, None)
+        "0-1 years of experience"  -> (0.0, 1.0)
+        "0–1 year of experience"   -> (0.0, 1.0)   (en dash)
+
+    The range pattern is checked FIRST: a bare single-number pattern
+    would otherwise greedily match the UPPER bound out of a range
+    (e.g. matching "1" out of "0-1 years") since it has nothing to
+    anchor against a preceding "<number><dash>" prefix. Dash
+    characters include the common Unicode variants (en dash, em
+    dash, etc. - the same \\u2010-\\u2015 range normalize_text()
+    already treats as a hyphen), since JDs authored in Word/Google
+    Docs commonly use "0–1 year" rather than an ASCII hyphen.
     """
-    patterns = [
-        r"(?i)(?:minimum|at least|required)?\s*(\d+(?:\.\d+)?)\s*\+?\s*years?\s+(?:of\s+)?experience",
-        r"(?i)(\d+(?:\.\d+)?)\s*-\s*\d+(?:\.\d+)?\s*years?\s+(?:of\s+)?experience",
-    ]
+    range_pattern = (
+        r"(?i)(\d+(?:\.\d+)?)\s*[-‐-―]\s*"
+        r"(\d+(?:\.\d+)?)\s*\+?\s*years?\s+(?:of\s+)?experience"
+    )
 
-    for pattern in patterns:
-        match = re.search(pattern, text)
+    match = re.search(range_pattern, text)
 
-        if match:
-            return float(match.group(1))
+    if match:
+        return float(match.group(1)), float(match.group(2))
 
-    return None
+    single_pattern = (
+        r"(?i)(?:minimum|at least|required)?\s*"
+        r"(\d+(?:\.\d+)?)\s*\+?\s*years?\s+(?:of\s+)?experience"
+    )
+
+    match = re.search(single_pattern, text)
+
+    if match:
+        return float(match.group(1)), None
+
+    return None, None
+
+
+def extract_experience_years(text: str) -> float | None:
+    """
+    Extract the MINIMUM required years of experience (see
+    extract_experience_range() for the full range, including any
+    stated upper bound).
+    """
+    minimum, _ = extract_experience_range(text)
+
+    return minimum
 
 
 def extract_list_items(text: str) -> list[str]:
@@ -137,7 +172,7 @@ def extract_list_items(text: str) -> list[str]:
             continue
 
         line = re.sub(
-            r"^(?:[-*•▪◦‣]|\d+[.)])\s*",
+            r"^(?:[-*•●▪◦‣]|\d+[.)])[\s​]*",
             "",
             line,
         ).strip()
@@ -187,6 +222,50 @@ def extract_education(text: str) -> list[str]:
         return items
 
     return [clean_text(text)]
+
+
+_DEGREE_FALLBACK_PATTERN = re.compile(
+    r"(?i)\b(?:"
+    r"bachelor(?:'s)?(?:\s+degree)?|master(?:'s)?(?:\s+degree)?|"
+    r"b\.\s?tech|m\.\s?tech|"
+    # "b.e."/"m.e." etc. require the literal periods in this
+    # whole-document fallback scan - without them, "b e" or "m e"
+    # would match ordinary words like "be"/"me", which is far too
+    # common to safely treat as a degree signal outside a dedicated
+    # Education section.
+    r"b\.\s?e\.?|m\.\s?e\.?|"
+    r"b\.\s?sc\.?|m\.\s?sc\.?|bca|mca|mba|phd|doctorate|"
+    r"associate(?:'s)?(?:\s+degree)?"
+    r")\b"
+)
+
+
+def extract_education_from_text(text: str) -> list[str]:
+    """
+    Fallback: find degree mentions anywhere in the raw document
+    text (e.g. "Eligibility: ... B.E./B.Tech/B.Sc./BCA students"),
+    for JDs that state education requirements inline rather than
+    under a dedicated "Education:" heading.
+
+    Returns the containing line(s) so the requirement is still
+    readable in context, not just the bare abbreviation.
+    """
+    if not text:
+        return []
+
+    lines = [
+        clean_text(line)
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+    matches = [
+        line
+        for line in lines
+        if _DEGREE_FALLBACK_PATTERN.search(line)
+    ]
+
+    return _deduplicate(matches)
 
 
 def extract_certifications(text: str) -> list[str]:

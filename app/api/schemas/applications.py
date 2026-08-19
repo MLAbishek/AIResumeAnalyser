@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.api.schemas.resumes import ResumeResponse
 from app.api.schemas.screenings import ScreeningResultResponse
 
 
@@ -33,22 +34,33 @@ class ApplicationResponse(BaseModel):
     job_title: str | None
     resume_id: str
     candidate_name: str | None
+    # The candidate's real account email (from their login, not the
+    # resume parser's best-effort extraction) - reliable even when
+    # resume text parsing produces a messy or missing name/email.
+    candidate_email: str | None = None
     status: ApplicationStatus
     applied_at: datetime
     updated_at: datetime
     screening: ScreeningResultResponse | None
+    # Full candidate profile (skills, education, experience, resume
+    # text) - present whenever the resume could be loaded, so the
+    # recruiter/candidate detail view has everything without a
+    # second request.
+    resume: ResumeResponse | None = None
 
 
 class RecruiterApplicationListItem(BaseModel):
     application_id: int
     resume_id: str
     candidate_name: str | None
+    candidate_email: str | None = None
     status: ApplicationStatus
     applied_at: datetime
     rank: int | None
     score: float | None
     eligible: bool | None
     decision: str | None
+    skills: list[str] = []
 
 
 class RecruiterApplicationListResponse(BaseModel):

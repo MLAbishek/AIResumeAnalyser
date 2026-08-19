@@ -84,6 +84,12 @@ class Job(Base):
         nullable=False,
     )
 
+    responsibilities: Mapped[list] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=False,
+    )
+
     required_experience_months: Mapped[int] = mapped_column(
         Integer,
         default=0,

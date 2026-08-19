@@ -4,6 +4,7 @@ from app.database.models.resume import (
     Resume,
     ResumeEducation,
     ResumeExperience,
+    ResumeProject,
 )
 from app.database.models.screening import ScreeningResult
 from app.database.models.ranking import RankingResult
@@ -18,6 +19,7 @@ __all__ = [
     "Resume",
     "ResumeExperience",
     "ResumeEducation",
+    "ResumeProject",
     "ScreeningResult",
     "RankingResult",
     "MatchProfile",

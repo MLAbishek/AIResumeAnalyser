@@ -18,9 +18,11 @@ from app.parsing.resume_extractors import (
     calculate_total_experience_years,
     extract_certifications,
     extract_education,
+    extract_email,
     extract_experience,
     extract_job_titles,
     extract_name,
+    extract_phone,
     extract_projects,
     extract_skills,
     extract_summary,
@@ -75,11 +77,13 @@ class ResumeParser:
 
         job_titles = extract_job_titles(experiences)
 
+        header = sections.get("header", "")
+
         return Resume(
             resume_id=self._generate_resume_id(document),
-            name=extract_name(
-                sections.get("header", "")
-            ),
+            name=extract_name(header),
+            email=extract_email(header),
+            phone=extract_phone(header),
             summary=extract_summary(sections),
             skills=skills,
             experience=experiences,

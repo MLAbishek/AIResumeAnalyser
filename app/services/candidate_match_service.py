@@ -34,9 +34,13 @@ def _job_to_screening_schema(job: Job) -> JobDescription:
             if job.required_experience_months
             else None
         ),
-        education=[],
-        certifications=[],
-        responsibilities=[],
+        education=[
+            requirement.get("description", "")
+            for requirement in (job.education_requirements or [])
+            if requirement.get("description")
+        ],
+        certifications=job.required_certifications or [],
+        responsibilities=job.responsibilities or [],
         location=job.location,
         job_type=job.job_type,
         raw_text=job.raw_text,

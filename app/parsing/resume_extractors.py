@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 
-from app.core.schemas import Education, Experience
+from app.core.schemas import Education, Experience, Project
 
 
 def clean_text(text: str) -> str:
@@ -20,8 +20,8 @@ def extract_name(header: str) -> str | None:
     """
     Extract candidate name from the resume header.
 
-    Uses the first meaningful line unless it looks like
-    an email, phone number, URL, or common heading.
+    Uses the first meaningful line unless it looks like an email,
+    phone number, URL/handle, or common heading/section label.
     """
     if not header:
         return None
@@ -31,6 +31,14 @@ def extract_name(header: str) -> str | None:
         r"https?://",
         r"www\.",
         r"\+?\d[\d\s().-]{7,}",
+        # Bare domain-style links/handles with no scheme, e.g.
+        # "linkedin.com/in/...", "github.com/...",
+        # "leetcode.com/u/..." - a "/" almost never appears in a
+        # real name, and these commonly sit right next to the name
+        # in a resume header.
+        r"/",
+        r"\b(?:linkedin|github|gitlab|leetcode|hackerrank|"
+        r"stackoverflow|twitter|behance|kaggle|portfolio)\b",
     ]
 
     for line in header.splitlines():
@@ -49,9 +57,61 @@ def extract_name(header: str) -> str | None:
         }:
             continue
 
-        # A reasonable name should not be excessively long.
-        if 2 <= len(line.split()) <= 6 and len(line) <= 100:
+        word_count = len(line.split())
+
+        # A reasonable name should not be excessively long. A
+        # single "word" is also accepted (word_count == 1): some
+        # PDF text extraction loses the space between a first and
+        # last name (e.g. "John Smith" -> "JohnSmith"), so a short,
+        # purely-alphabetic first line is still a plausible name.
+        if word_count == 1:
+            if line.isalpha() and 2 <= len(line) <= 60:
+                return line
+
+            continue
+
+        if 2 <= word_count <= 6 and len(line) <= 100:
             return line
+
+    return None
+
+
+def extract_email(header: str) -> str | None:
+    """Extract the candidate's email address from the header."""
+    if not header:
+        return None
+
+    match = re.search(
+        r"[\w.+-]+@[\w-]+\.[\w.-]+",
+        header,
+    )
+
+    return match.group(0) if match else None
+
+
+def extract_phone(header: str) -> str | None:
+    """
+    Extract a phone number from the header, if one is present.
+
+    Requires at least 7 digits so it doesn't mistake years, zip
+    codes, or other short digit runs for a phone number.
+    """
+    if not header:
+        return None
+
+    pattern = re.compile(
+        r"(?<!\w)"
+        r"(\+?\d{1,3}[\s.-]?)?"
+        r"(\(?\d{2,4}\)?[\s.-]?){2,4}\d{2,4}"
+        r"(?!\w)"
+    )
+
+    for match in pattern.finditer(header):
+        candidate = match.group(0).strip()
+        digits = re.sub(r"\D", "", candidate)
+
+        if 7 <= len(digits) <= 15:
+            return candidate
 
     return None
 
@@ -89,7 +149,7 @@ def extract_list_items(text: str) -> list[str]:
             continue
 
         line = re.sub(
-            r"^(?:[-*•▪◦‣]|\d+[.)])\s*",
+            r"^(?:[-*•●▪◦‣]|\d+[.)])[\s​]*",
             "",
             line,
         ).strip()
@@ -98,6 +158,17 @@ def extract_list_items(text: str) -> list[str]:
             items.append(line)
 
     return deduplicate(items)
+
+
+def _strip_category_label(item: str) -> str:
+    """
+    Drop a leading "Category Label:" prefix from a skills line.
+
+    Skill lists are commonly grouped by category, e.g.
+    "Programming Languages: Python, Java" - without this, the
+    label stays glued to the first value after the colon.
+    """
+    return re.sub(r"^[^:\n]{1,50}:\s*", "", item).strip()
 
 
 def extract_skills(text: str) -> list[str]:
@@ -116,6 +187,15 @@ def extract_skills(text: str) -> list[str]:
         result = []
 
         for item in items:
+            item = _strip_category_label(item)
+
+            # A line that was *only* a category label (e.g. the
+            # heading and its values were split onto separate
+            # lines by PDF text extraction) leaves nothing here -
+            # skip it rather than adding an empty/label-only entry.
+            if not item:
+                continue
+
             # Handle bullet containing multiple comma-separated skills.
             parts = re.split(r"[,;|]", item)
 
@@ -128,7 +208,7 @@ def extract_skills(text: str) -> list[str]:
         return deduplicate(result)
 
     # Handle comma/semicolon/pipe-separated skills.
-    parts = re.split(r"[,;|]", text)
+    parts = re.split(r"[,;|]", _strip_category_label(text))
 
     return deduplicate(
         [
@@ -198,6 +278,70 @@ def extract_experience(text: str) -> list[Experience]:
                 (index, match)
             )
 
+    def _header_start(role_company_index: int) -> int:
+        """
+        Resolve where this entry's role/company header actually
+        begins.
+
+        Handles both a single combined line ("Role | Company") and
+        the equally common two-line template where the title and
+        company sit on separate consecutive lines immediately
+        before the date range - in that case there is no "|"/"-"
+        separator on the line right before the date, so we look one
+        line further back for the title.
+        """
+        line = lines[role_company_index]
+        _, company = _split_role_company(line)
+
+        if company is not None:
+            return role_company_index
+
+        previous_index = role_company_index - 1
+
+        if previous_index < 0:
+            return role_company_index
+
+        previous_line = lines[previous_index]
+
+        if date_pattern.search(
+            previous_line
+        ) or _looks_like_section_heading(previous_line):
+            return role_company_index
+
+        return previous_index
+
+    def _next_entry_boundary(next_date_index: int) -> int:
+        """
+        Given the line index of the NEXT experience entry's date
+        match, return the index marking where the CURRENT entry's
+        description must stop (exclusive) - the first line
+        belonging to the next entry's own header, whichever of the
+        two header shapes it uses (title+date combined on one line,
+        or title/company on the line(s) before a separate date line).
+        """
+        next_line = lines[next_date_index]
+        next_match = date_pattern.search(next_line)
+
+        if next_match:
+            next_inline_title = next_line[
+                : next_match.start()
+            ].strip(" \t-–—|:")
+
+            if next_inline_title and not _looks_like_section_heading(
+                next_inline_title
+            ):
+                return next_date_index
+
+        next_role_company_index = next_date_index - 1
+
+        if next_role_company_index < 0:
+            return next_date_index
+
+        if date_pattern.search(lines[next_role_company_index]):
+            return next_role_company_index
+
+        return _header_start(next_role_company_index)
+
     experiences: list[Experience] = []
 
     for position, (date_index, match) in enumerate(date_matches):
@@ -205,8 +349,72 @@ def extract_experience(text: str) -> list[Experience]:
         start_date = match.group(1)
         end_date = match.group(2)
 
-        # The line immediately before the date range normally
-        # contains role + company.
+        # Some templates put the title and date on the SAME line
+        # ("Software Development Intern Jan 2026 - Jun 2026"), with
+        # the company following on the NEXT line - the mirror image
+        # of the "title/company before the date" templates handled
+        # below. Detect this first: if there is real text before the
+        # date match on its own line, that text is the role, and the
+        # company (if present) comes after, not before.
+        inline_title = lines[date_index][:match.start()].strip(
+            " \t-–—|:"
+        )
+
+        if inline_title and not _looks_like_section_heading(
+            inline_title
+        ):
+            role = clean_text(inline_title)
+            company = None
+            header_end = date_index
+
+            next_index = date_index + 1
+
+            if (
+                next_index < len(lines)
+                and not date_pattern.search(lines[next_index])
+                and not _looks_like_section_heading(
+                    lines[next_index]
+                )
+                and not _looks_like_bullet_line(lines[next_index])
+            ):
+                company = clean_text(lines[next_index])
+                header_end = next_index
+
+            description_start = header_end + 1
+
+            if position + 1 < len(date_matches):
+                description_end = _next_entry_boundary(
+                    date_matches[position + 1][0]
+                )
+            else:
+                description_end = len(lines)
+
+            description_lines = [
+                line
+                for line in lines[
+                    description_start:description_end
+                ]
+                if not _looks_like_section_heading(line)
+            ]
+
+            description = (
+                "\n".join(description_lines).strip() or None
+            )
+
+            experiences.append(
+                Experience(
+                    company=company,
+                    role=role,
+                    start_date=start_date,
+                    end_date=end_date,
+                    description=description,
+                )
+            )
+
+            continue
+
+        # The line(s) immediately before the date range normally
+        # contain role + company.
         role_company_index = date_index - 1
 
         if role_company_index < 0:
@@ -218,20 +426,28 @@ def extract_experience(text: str) -> list[Experience]:
         if date_pattern.search(role_company_line):
             continue
 
-        role, company = _split_role_company(
-            role_company_line
-        )
+        header_start = _header_start(role_company_index)
+
+        if header_start != role_company_index:
+            # Title and company are on two separate lines: the
+            # later line (immediately before the date) is the
+            # company, the earlier one is the role/title.
+            role = clean_text(lines[header_start])
+            company = clean_text(role_company_line)
+        else:
+            role, company = _split_role_company(
+                role_company_line
+            )
 
         # Description begins immediately after the date line.
         description_start = date_index + 1
 
-        # The next date range marks the next experience.
+        # The next date range marks the next experience - exclude
+        # whichever line(s) form its role/company header.
         if position + 1 < len(date_matches):
-            next_date_index = date_matches[position + 1][0]
-
-            # The line immediately before the next date is the
-            # next role/company line, so exclude it.
-            description_end = next_date_index - 1
+            description_end = _next_entry_boundary(
+                date_matches[position + 1][0]
+            )
         else:
             description_end = len(lines)
 
@@ -279,6 +495,11 @@ def _split_role_company(text: str) -> tuple[str | None, str | None]:
 def extract_education(text: str) -> list[Education]:
     """
     Extract education entries using common degree/date patterns.
+
+    Handles both the "Institution - Degree - Dates" single-line
+    format and the equally common multi-line format where the
+    institution name and the date range each sit on their own line
+    around the degree line.
     """
     if not text:
         return []
@@ -291,31 +512,34 @@ def extract_education(text: str) -> list[Education]:
 
     results: list[Education] = []
 
+    # Word-bounded so e.g. "M.E." can't accidentally match inside an
+    # unrelated word like "ACHIEVEMENTS" (which contains "...ie-ve-
+    # ME-nts").
     degree_pattern = re.compile(
-        r"(?i)"
+        r"(?i)\b"
         r"(bachelor|master|b\.?tech|m\.?tech|b\.?e\.?|m\.?e\.?|"
         r"bsc|msc|b\.?sc|m\.?sc|mba|phd|doctorate|associate)"
+        r"\b"
     )
 
     date_pattern = re.compile(
         r"(?i)"
-        r"(\d{4})\s*(?:-|–|—|to)\s*(\d{4}|present|current)"
+        r"(\d{4})\s*(?:-|–|—|to)\s*"
+        r"(?:expected|anticipated|exp\.?)?\s*"
+        r"(\d{4}|present|current)"
     )
 
-    for line in lines:
+    def _looks_like_metadata_line(candidate: str) -> bool:
+        return bool(
+            degree_pattern.search(candidate)
+            or date_pattern.search(candidate)
+        )
+
+    for index, line in enumerate(lines):
         degree_match = degree_pattern.search(line)
 
         if not degree_match:
             continue
-
-        date_match = date_pattern.search(line)
-
-        start_date = None
-        end_date = None
-
-        if date_match:
-            start_date = date_match.group(1)
-            end_date = date_match.group(2)
 
         degree = degree_match.group(0)
 
@@ -329,6 +553,31 @@ def extract_education(text: str) -> list[Education]:
 
         institution = before_degree or None
         field = after_degree or None
+
+        # The institution name commonly sits on its own line
+        # immediately before the degree line.
+        if institution is None and index > 0:
+            previous_line = lines[index - 1]
+
+            if not _looks_like_metadata_line(previous_line):
+                institution = previous_line
+
+        # The date range commonly sits on its own line immediately
+        # before or after the degree line.
+        start_date = None
+        end_date = None
+
+        for candidate_line in (
+            line,
+            lines[index + 1] if index + 1 < len(lines) else "",
+            lines[index - 1] if index > 0 else "",
+        ):
+            date_match = date_pattern.search(candidate_line)
+
+            if date_match:
+                start_date = date_match.group(1)
+                end_date = date_match.group(2)
+                break
 
         results.append(
             Education(
@@ -348,9 +597,125 @@ def extract_certifications(text: str) -> list[str]:
     return extract_list_items_or_split(text)
 
 
-def extract_projects(text: str) -> list[str]:
-    """Extract project descriptions."""
-    return extract_list_items_or_split(text)
+_PROJECT_LINK_LABELS = {
+    "github",
+    "gitlab",
+    "demo",
+    "live demo",
+    "link",
+    "view project",
+    "source code",
+}
+
+_PROJECT_BULLET_ONLY = re.compile(r"^[-*•●▪◦‣|]$")
+_PROJECT_BULLET_PREFIX = re.compile(
+    r"^(?:[-*•●▪◦‣|]|\d+[.)])[\s​]*"
+)
+_PROJECT_TECHSTACK_PREFIX = re.compile(
+    r"(?i)^(?:tech\s*stack|technologies(?:\s*used)?|"
+    r"tools(?:\s*&?\s*technologies)?)\s*:\s*(.*)$"
+)
+
+
+def extract_projects(text: str) -> list[Project]:
+    """
+    Extract structured project entries (name, description,
+    technologies) from a projects section.
+
+    Supports both a flat bulleted list of project names
+    ("- Project Name") and the common template format where a
+    bullet marker sits alone on its own line, the project name
+    follows on the next line, free-text description lines follow
+    that, and a trailing "Techstack: ..." line lists technologies.
+    """
+    if not text:
+        return []
+
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+    projects: list[Project] = []
+
+    current_name: str | None = None
+    description_lines: list[str] = []
+    technologies: list[str] = []
+    awaiting_name = False
+
+    def flush() -> None:
+        if current_name:
+            projects.append(
+                Project(
+                    name=current_name,
+                    description=(
+                        "\n".join(description_lines).strip()
+                        or None
+                    ),
+                    technologies=technologies,
+                )
+            )
+
+    for line in lines:
+        techstack_match = _PROJECT_TECHSTACK_PREFIX.match(line)
+
+        if techstack_match:
+            technologies = [
+                clean_text(part)
+                for part in re.split(
+                    r"[,;]", techstack_match.group(1)
+                )
+                if clean_text(part)
+            ]
+            continue
+
+        if _PROJECT_BULLET_ONLY.match(line):
+            # A bullet marker alone on its own line - the project
+            # name is the next non-bullet line.
+            flush()
+            current_name = None
+            description_lines = []
+            technologies = []
+            awaiting_name = True
+            continue
+
+        bullet_stripped = _PROJECT_BULLET_PREFIX.sub(
+            "", line
+        ).strip()
+
+        if (
+            bullet_stripped
+            and bullet_stripped != line
+        ):
+            # Bullet marker and project name on the same line.
+            flush()
+            current_name = bullet_stripped
+            description_lines = []
+            technologies = []
+            awaiting_name = False
+            continue
+
+        if awaiting_name:
+            current_name = line
+            awaiting_name = False
+            continue
+
+        if current_name is None:
+            # No project has started yet and this line isn't a
+            # bullet - nothing to attach it to.
+            continue
+
+        if line.casefold() in _PROJECT_LINK_LABELS:
+            # A bare hyperlink-icon label (e.g. "GitHub", "Demo"),
+            # not real project content.
+            continue
+
+        description_lines.append(line)
+
+    flush()
+
+    return projects
 
 
 def extract_job_titles(experiences: list[Experience]) -> list[str]:
@@ -364,6 +729,43 @@ def extract_job_titles(experiences: list[Experience]) -> list[str]:
     )
 
 
+def calculate_duration_months(
+    start_date: str | None,
+    end_date: str | None,
+) -> int | None:
+    """
+    Calculate the number of months between two resume date strings
+    (e.g. "Aug 2025", "2023", "Present"). Returns None if the range
+    can't be resolved.
+    """
+    import datetime
+
+    if not start_date:
+        return None
+
+    start = parse_date(start_date)
+
+    if start is None:
+        return None
+
+    end = (
+        parse_date(end_date)
+        if end_date
+        else datetime.date.today()
+    )
+
+    if end is None:
+        return None
+
+    months = (
+        (end.year - start.year) * 12
+        + end.month
+        - start.month
+    )
+
+    return months if months > 0 else None
+
+
 def calculate_total_experience_years(
     experiences: list[Experience],
 ) -> float | None:
@@ -372,36 +774,15 @@ def calculate_total_experience_years(
 
     Returns None if no usable date ranges exist.
     """
-    import datetime
-
     total_months = 0
 
-    current = datetime.date.today()
-
     for experience in experiences:
-        if not experience.start_date:
-            continue
-
-        start = parse_date(experience.start_date)
-
-        if start is None:
-            continue
-
-        if experience.end_date:
-            end = parse_date(experience.end_date)
-        else:
-            end = current
-
-        if end is None:
-            continue
-
-        months = (
-            (end.year - start.year) * 12
-            + end.month
-            - start.month
+        months = calculate_duration_months(
+            experience.start_date,
+            experience.end_date,
         )
 
-        if months > 0:
+        if months:
             total_months += months
 
     if total_months == 0:
@@ -506,3 +887,14 @@ def _looks_like_section_heading(line: str) -> bool:
     }
 
     return line.casefold().rstrip(":") in headings
+
+
+def _looks_like_bullet_line(line: str) -> bool:
+    """
+    Detect a bullet/list-item line, so it's never mistaken for a
+    company name (e.g. when a title+date header line is immediately
+    followed by a description bullet rather than a company line).
+    """
+    return bool(
+        re.match(r"^(?:[-*•●▪◦‣]|\d+[.)])[\s​]*", line)
+    )

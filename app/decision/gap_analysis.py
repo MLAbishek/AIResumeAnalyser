@@ -1,5 +1,9 @@
 from typing import Any
 
+from app.normalization.normalizer_utils import (
+    split_requirement_group,
+)
+
 
 class GapAnalysisEngine:
     """
@@ -20,20 +24,13 @@ class GapAnalysisEngine:
         if not isinstance(resume, dict):
             raise TypeError("resume must be a dictionary")
 
-        required_skills = self._normalize_set(
-            jd.get("required_skills", [])
-        )
-
         candidate_skills = self._normalize_set(
             resume.get("skills", [])
         )
 
-        matched_skills = sorted(
-            required_skills & candidate_skills
-        )
-
-        missing_skills = sorted(
-            required_skills - candidate_skills
+        matched_skills, missing_skills = self._calculate_skill_gap(
+            jd.get("required_skills", []),
+            candidate_skills,
         )
 
         experience_gap = self._calculate_experience_gap(
@@ -88,6 +85,63 @@ class GapAnalysisEngine:
             for value in values
             if str(value).strip()
         }
+
+    @staticmethod
+    def _calculate_skill_gap(
+        required_entries: Any,
+        candidate_skills: set[str],
+    ) -> tuple[list[str], list[str]]:
+        """
+        Same canonical requirement representation eligibility and
+        ranking use: a required_skills entry may be a single
+        mandatory skill or a pipe-joined alternatives group (see
+        normalizer_utils.split_requirement_group()) - satisfied by
+        ANY ONE alternative. A satisfied group is reported as
+        matched using the specific alternative the candidate has,
+        never the raw "|"-joined string; an unsatisfied group is
+        reported as a human-readable "a or b or c" gap instead.
+        """
+
+        if required_entries is None:
+            required_entries = []
+
+        if isinstance(required_entries, str):
+            required_entries = [required_entries]
+
+        matched: set[str] = set()
+        missing: set[str] = set()
+
+        for entry in required_entries:
+            normalized_entry = " ".join(
+                str(entry).strip().lower().split()
+            )
+
+            if not normalized_entry:
+                continue
+
+            alternatives = split_requirement_group(
+                normalized_entry
+            )
+
+            matched_alternative = next(
+                (
+                    alternative
+                    for alternative in alternatives
+                    if alternative in candidate_skills
+                ),
+                None,
+            )
+
+            if matched_alternative is not None:
+                matched.add(matched_alternative)
+            else:
+                missing.add(
+                    " or ".join(alternatives)
+                    if len(alternatives) > 1
+                    else alternatives[0]
+                )
+
+        return sorted(matched), sorted(missing)
 
     @staticmethod
     def _calculate_experience_gap(

@@ -34,6 +34,10 @@ class JobCreateRequest(BaseModel):
         default_factory=list
     )
 
+    responsibilities: list[str] = Field(
+        default_factory=list
+    )
+
     required_experience_months: int = Field(
         default=0,
         ge=0,
@@ -57,6 +61,7 @@ class JobResponse(BaseModel):
 
     education_requirements: list[dict]
     required_certifications: list[str]
+    responsibilities: list[str]
 
     required_experience_months: int
     status: str = "open"

@@ -11,10 +11,12 @@ from app.api.routes.candidate import router as candidate_router
 from app.api.routes.applications import (
     router as applications_router,
 )
+from app.lifespan import lifespan
 
 app = FastAPI(
     title="Semantic Resume Screening System",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

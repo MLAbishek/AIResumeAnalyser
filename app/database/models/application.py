@@ -96,3 +96,11 @@ class Application(Base):
     resume: Mapped["Resume"] = relationship()
 
     screening: Mapped["ScreeningResult | None"] = relationship()
+
+    # The candidate's account - lets recruiter-facing views show the
+    # real login email as a reliable identifier, independent of
+    # whatever name/email the resume parser (imperfectly) extracted
+    # from the uploaded document itself.
+    candidate: Mapped["User"] = relationship(
+        foreign_keys=[candidate_user_id],
+    )

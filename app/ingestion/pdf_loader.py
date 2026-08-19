@@ -1,7 +1,7 @@
 from pathlib import Path
 from app.core.schemas import DocumentType, RawDocument, RawDocumentPage
 from app.core.document_manager import DocumentManager
-import pypdf 
+import fitz
 
 class PDFLoader:
     def __init__(self):
@@ -21,7 +21,7 @@ class PDFLoader:
         # 2. Check existence SECOND so missing PDFs raise FileNotFoundError
         if not path.exists():
             raise FileNotFoundError(f"PDF file not found: {file_path}")
-        
+
         if document_type is None:
             raise ValueError("document_type is required for a valid PDF")
 
@@ -33,10 +33,16 @@ class PDFLoader:
 
         pages: list[RawDocumentPage] = []
 
-        with open(path, "rb") as f:
-            reader = pypdf.PdfReader(f)
-            for idx, page in enumerate(reader.pages, start=1):
-                extracted_text = page.extract_text() or ""
+        # PyMuPDF (fitz) reconstructs line/word layout far more
+        # reliably than pypdf on PDFs with justified text or unusual
+        # glyph spacing - pypdf was observed splitting such text into
+        # one word per line, which breaks every downstream line-based
+        # section/heading parser. fitz is already a hard dependency
+        # (used for document validation) so this introduces nothing
+        # new.
+        with fitz.open(path) as document:
+            for idx, page in enumerate(document, start=1):
+                extracted_text = page.get_text("text") or ""
                 pages.append(
                     RawDocumentPage(
                         page_number=idx,

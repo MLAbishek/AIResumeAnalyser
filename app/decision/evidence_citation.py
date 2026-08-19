@@ -1,6 +1,10 @@
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from app.normalization.normalizer_utils import (
+    split_requirement_group,
+)
+
 
 @dataclass
 class EvidenceReference:
@@ -108,22 +112,36 @@ class EvidenceCitationEngine:
         }
 
         for required_skill in required_skills:
-            normalized = self._normalize(
-                required_skill
-            )
+            # A required_skill entry may encode alternatives
+            # ("java|python|c++|c#" - see
+            # normalizer_utils.split_requirement_group()). Evidence
+            # cites whichever specific alternative the candidate
+            # actually has, never the raw "|"-joined group string.
+            alternatives = split_requirement_group(required_skill)
 
-            if normalized in resume_lookup:
+            matched_alternative = None
+            matched_resume_skill = None
+
+            for alternative in alternatives:
+                normalized = self._normalize(alternative)
+
+                if normalized in resume_lookup:
+                    matched_alternative = alternative
+                    matched_resume_skill = resume_lookup[
+                        normalized
+                    ]
+                    break
+
+            if matched_alternative is not None:
                 references.append(
                     EvidenceReference(
                         claim=(
                             f"Candidate has "
-                            f"{required_skill}."
+                            f"{matched_alternative}."
                         ),
                         source="resume",
                         section="skills",
-                        evidence=(
-                            resume_lookup[normalized]
-                        ),
+                        evidence=matched_resume_skill,
                     )
                 )
 

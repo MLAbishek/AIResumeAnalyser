@@ -59,6 +59,15 @@ SECTION_ALIASES = {
         "key projects",
         "project experience",
     },
+    "awards": {
+        "awards",
+        "achievements",
+        "awards & achievements",
+        "awards and achievements",
+        "honors",
+        "honors & awards",
+        "honors and awards",
+    },
 }
 
 
@@ -71,14 +80,27 @@ def normalize_heading(text: str) -> str:
 
 
 def detect_section_heading(line: str) -> str | None:
-    """Return canonical section name for a recognized heading."""
+    """
+    Return canonical section name for a recognized heading.
+
+    Tolerates a simple trailing-"s" plural/singular mismatch (e.g.
+    "Work Experiences" vs. the canonical alias "work experience") so
+    the parser doesn't depend on one exact heading spelling.
+    """
     normalized = normalize_heading(line)
 
     if not normalized:
         return None
 
+    candidates = {normalized}
+
+    if normalized.endswith("s"):
+        candidates.add(normalized[:-1])
+    else:
+        candidates.add(normalized + "s")
+
     for section, aliases in SECTION_ALIASES.items():
-        if normalized in aliases:
+        if candidates & aliases:
             return section
 
     return None

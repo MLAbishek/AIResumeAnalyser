@@ -22,6 +22,14 @@ class ResumeEducationCreate(BaseModel):
     end_date: date | None = None
 
 
+class ResumeProjectCreate(BaseModel):
+    name: str
+    description: str | None = None
+    technologies: list[str] = Field(
+        default_factory=list,
+    )
+
+
 class ResumeCreateRequest(BaseModel):
     resume_id: str = Field(
         min_length=1,
@@ -49,6 +57,10 @@ class ResumeCreateRequest(BaseModel):
         default_factory=list,
     )
 
+    certifications: list[str] = Field(
+        default_factory=list,
+    )
+
     total_experience_months: int = Field(
         default=0,
         ge=0,
@@ -61,6 +73,10 @@ class ResumeCreateRequest(BaseModel):
     )
 
     education: list[ResumeEducationCreate] = Field(
+        default_factory=list,
+    )
+
+    projects: list[ResumeProjectCreate] = Field(
         default_factory=list,
     )
 
@@ -85,6 +101,16 @@ class ResumeEducationResponse(
     id: int
 
 
+class ResumeProjectResponse(
+    ResumeProjectCreate
+):
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
+
+    id: int
+
+
 class ResumeResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
@@ -100,9 +126,11 @@ class ResumeResponse(BaseModel):
     job_titles: list[str]
     organizations: list[str]
     technologies: list[str]
+    certifications: list[str]
 
     total_experience_months: int
     raw_text: str | None
 
     experiences: list[ResumeExperienceResponse]
     education: list[ResumeEducationResponse]
+    projects: list[ResumeProjectResponse]

@@ -118,8 +118,10 @@ def test_extract_certifications(sample_resume):
 def test_extract_projects(sample_resume):
     result = ResumeParser().parse(sample_resume)
 
-    assert "Resume Screening System" in result.projects
-    assert "Image Classification Platform" in result.projects
+    project_names = [project.name for project in result.projects]
+
+    assert "Resume Screening System" in project_names
+    assert "Image Classification Platform" in project_names
 
 
 def test_preserves_raw_text(sample_resume):

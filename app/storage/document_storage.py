@@ -124,12 +124,13 @@ class DocumentStorage:
 
         return destination
 
-    def retrieve_raw(
+    def get_raw_path(
         self,
         document_id: str,
-    ) -> bytes:
+    ) -> Path:
         """
-        Retrieve original document bytes by document ID.
+        Resolve the on-disk path of a stored original document,
+        without reading its contents.
         """
 
         matches = list(
@@ -143,7 +144,19 @@ class DocumentStorage:
                 f"Raw document not found: {document_id}"
             )
 
-        return matches[0].read_bytes()
+        return matches[0]
+
+    def retrieve_raw(
+        self,
+        document_id: str,
+    ) -> bytes:
+        """
+        Retrieve original document bytes by document ID.
+        """
+
+        return self.get_raw_path(
+            document_id
+        ).read_bytes()
 
     def retrieve_processed(
         self,

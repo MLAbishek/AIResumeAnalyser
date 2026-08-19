@@ -12,6 +12,7 @@ from typing import Any, Sequence
 
 import numpy as np
 
+from app.retrieval.jd_chunker import JDChunk
 from app.retrieval.resume_chunker import ResumeChunk
 
 
@@ -21,12 +22,25 @@ DEFAULT_EMBEDDING_DIMENSION = 1024
 
 @dataclass(frozen=True)
 class ChunkEmbedding:
-    """     
+    """
     Embedding associated with one resume chunk.
     """
 
     chunk_id: str
     resume_id: str
+    section: str
+    vector: np.ndarray
+
+
+@dataclass(frozen=True)
+class JDChunkEmbedding:
+    """
+    Embedding associated with one job-description chunk. Mirrors
+    ChunkEmbedding for the JD side (job_id instead of resume_id).
+    """
+
+    chunk_id: str
+    job_id: str
     section: str
     vector: np.ndarray
 
@@ -173,7 +187,32 @@ class EmbeddingGenerator:
             )
             for chunk, vector in zip(chunks, vectors)
         ]
-        
+
+    def embed_jd_chunks(
+        self,
+        chunks: Sequence[JDChunk],
+    ) -> list[JDChunkEmbedding]:
+        """
+        Generate embeddings for JD chunks while preserving provenance.
+        Mirrors embed_chunks() for the JD side.
+        """
+        if not chunks:
+            return []
+
+        vectors = self.embed_texts(
+            [chunk.text for chunk in chunks]
+        )
+
+        return [
+            JDChunkEmbedding(
+                chunk_id=chunk.chunk_id,
+                job_id=chunk.job_id,
+                section=chunk.section,
+                vector=vector,
+            )
+            for chunk, vector in zip(chunks, vectors)
+        ]
+
     def embedding_dimension(self) -> int:
         """
         Return the dimensionality of the configured embedding model.

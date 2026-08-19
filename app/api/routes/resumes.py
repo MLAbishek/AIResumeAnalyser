@@ -16,6 +16,7 @@ from app.database.models.resume import (
     Resume,
     ResumeEducation,
     ResumeExperience,
+    ResumeProject,
 )
 
 
@@ -66,6 +67,7 @@ def create_resume_endpoint(
             job_titles=payload.job_titles,
             organizations=payload.organizations,
             technologies=payload.technologies,
+            certifications=payload.certifications,
             total_experience_months=(
                 payload.total_experience_months
             ),
@@ -100,6 +102,16 @@ def create_resume_endpoint(
                 )
             )
 
+        for project in payload.projects:
+            db.add(
+                ResumeProject(
+                    resume_id=resume.id,
+                    name=project.name,
+                    description=project.description,
+                    technologies=project.technologies,
+                )
+            )
+
         db.commit()
 
         resume = (
@@ -110,6 +122,9 @@ def create_resume_endpoint(
                 ),
                 selectinload(
                     type(resume).education
+                ),
+                selectinload(
+                    type(resume).projects
                 ),
             )
             .filter(
@@ -156,6 +171,7 @@ def list_resumes_endpoint(
         .options(
             selectinload(Resume.experiences),
             selectinload(Resume.education),
+            selectinload(Resume.projects),
         )
         .order_by(
             Resume.created_at.desc(), Resume.id.desc()
@@ -187,6 +203,7 @@ def get_resume_endpoint(
         .options(
             selectinload(Resume.experiences),
             selectinload(Resume.education),
+            selectinload(Resume.projects),
         )
         .filter(
             Resume.resume_id == resume_id

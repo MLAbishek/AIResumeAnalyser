@@ -55,12 +55,56 @@ class CanonicalJobBuilder:
         if title:
             title = self.job_title_normalizer.normalize(title)
 
-        required_skills = self.skill_normalizer.normalize_many(
-            parsed_jd.get("required_skills", [])
+        # JD requirement lines are frequently full sentences
+        # ("Good understanding of HTML, CSS, and JavaScript.")
+        # rather than atomic skills - extract_requirement_concepts
+        # pulls out the known, atomic concepts each sentence
+        # contains instead of treating the whole sentence as one
+        # unmatchable "skill". The original sentences are preserved
+        # unchanged on the JobDescription itself for evidence/display.
+        #
+        # A line's own phrasing ("Familiarity with...", "Basic
+        # knowledge of...") commonly signals a soft/flexible
+        # expectation rather than a hard must-have - such lines are
+        # reclassified as preferred rather than required, so
+        # eligibility isn't gated on every single phrase a prose JD
+        # happens to mention. This still leaves their concepts fully
+        # visible to ranking (30% weight) and gap analysis; it only
+        # changes whether they can single-handedly reject a
+        # candidate outright.
+        required_lines = []
+        soft_signal_lines = []
+
+        for line in parsed_jd.get("required_skills", []):
+            if self.skill_normalizer.is_soft_requirement_signal(
+                line
+            ):
+                soft_signal_lines.append(line)
+            else:
+                required_lines.append(line)
+
+        # extract_requirement_groups_many preserves "X, Y, or Z"
+        # alternative-requirement semantics (encoded as one
+        # pipe-joined entry - see split_requirement_group()) instead
+        # of flattening every concept a sentence mentions into
+        # independently-mandatory atoms. Used for both
+        # required_skills and preferred_skills so eligibility,
+        # ranking, gap analysis, and evidence all read the exact
+        # same requirement representation.
+        required_skills = (
+            self.skill_normalizer.extract_requirement_groups_many(
+                required_lines,
+                keep_unmatched_fallback=False,
+            )
         )
 
-        preferred_skills = self.skill_normalizer.normalize_many(
-            parsed_jd.get("preferred_skills", [])
+        preferred_skills = (
+            self.skill_normalizer.extract_requirement_groups_many(
+                [
+                    *soft_signal_lines,
+                    *parsed_jd.get("preferred_skills", []),
+                ]
+            )
         )
 
         required_technologies = (
@@ -89,6 +133,15 @@ class CanonicalJobBuilder:
             parsed_jd.get("education", [])
         )
 
+        # Responsibilities are kept as-is (not skill-normalized) -
+        # they are free-text sentences used for semantic embedding
+        # content, not for exact/canonical matching.
+        responsibilities = [
+            item.strip()
+            for item in parsed_jd.get("responsibilities", [])
+            if item and item.strip()
+        ]
+
         return CanonicalJob(
             job_id=job_id,
             title=title,
@@ -97,6 +150,7 @@ class CanonicalJobBuilder:
             preferred_skills=preferred_skills,
             required_technologies=required_technologies,
             preferred_technologies=preferred_technologies,
+            responsibilities=responsibilities,
             organizations=organizations,
             experience=experience,
             education=education,

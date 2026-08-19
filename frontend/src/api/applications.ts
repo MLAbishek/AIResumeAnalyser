@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiRequest, apiRequestBlob } from "./client";
 import type { components } from "../types/api";
 
 export type RecruiterApplicationListResponse =
@@ -43,5 +43,23 @@ export function updateApplicationStatus(
       token,
       body: JSON.stringify({ status }),
     },
+  );
+}
+
+/**
+ * Fetch the candidate's actual uploaded resume file as a Blob, for
+ * an authorized recruiter. The caller is responsible for turning
+ * this into an object URL (and revoking it on cleanup).
+ */
+export function getApplicationResumeBlob(
+  jobId: string,
+  applicationId: number,
+  token: string,
+) {
+  return apiRequestBlob(
+    `/api/jobs/${encodeURIComponent(
+      jobId,
+    )}/applications/${applicationId}/resume`,
+    { token },
   );
 }

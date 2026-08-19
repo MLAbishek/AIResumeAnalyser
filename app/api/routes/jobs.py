@@ -32,7 +32,7 @@ from app.database.crud.jobs import (
 from app.ingestion.document_validator import DocumentValidator
 from app.services.job_description_service import (
     JobDescriptionExtractionError,
-    extract_job_description,
+    parse_job_description,
 )
 
 
@@ -63,6 +63,9 @@ def _job_to_response(job) -> JobResponse:
         ),
         required_certifications=(
             job.required_certifications or []
+        ),
+        responsibilities=(
+            job.responsibilities or []
         ),
         required_experience_months=(
             job.required_experience_months
@@ -138,6 +141,7 @@ def create_job_endpoint(
         required_certifications=(
             request.required_certifications
         ),
+        responsibilities=request.responsibilities,
         required_experience_months=(
             request.required_experience_months
         ),
@@ -205,7 +209,7 @@ async def create_job_from_file_endpoint(
 
     try:
         try:
-            raw_text = extract_job_description(tmp_path)
+            parsed = parse_job_description(tmp_path)
         except JobDescriptionExtractionError as exc:
             raise HTTPException(
                 status_code=400,
@@ -217,15 +221,36 @@ async def create_job_from_file_endpoint(
 
         job_id = f"recruiter-upload-{uuid.uuid4().hex[:12]}"
 
+        required_experience_months = (
+            int(round(parsed.required_experience_years * 12))
+            if parsed.required_experience_years is not None
+            else 0
+        )
+
         job = create_job(
             db,
             job_id=job_id,
-            title=title or None,
-            raw_text=raw_text,
-            required_skills=[],
-            preferred_skills=[],
+            # An explicitly-typed title always wins over the
+            # parser's best-effort guess; otherwise fall back to
+            # whatever the parser found in the document itself.
+            title=title or parsed.title,
+            description=parsed.summary,
+            location=parsed.location,
+            job_type=parsed.job_type,
+            raw_text=parsed.raw_text,
+            required_skills=parsed.required_skills,
+            preferred_skills=parsed.preferred_skills,
             required_technologies=[],
             preferred_technologies=[],
+            education_requirements=[
+                {"description": item}
+                for item in parsed.education
+            ],
+            required_certifications=parsed.certifications,
+            responsibilities=parsed.responsibilities,
+            required_experience_months=(
+                required_experience_months
+            ),
             created_by_user_id=current_user.id,
         )
 
