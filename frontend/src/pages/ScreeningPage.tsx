@@ -3,6 +3,7 @@ import type { components } from "../types/api";
 import { ApiError } from "../api/client";
 import { getJobs } from "../api/jobs";
 import { getResumes } from "../api/resumes";
+import { listJobApplications } from "../api/applications";
 import { screenCandidates } from "../api/screening";
 import PageHeader from "../components/PageHeader";
 import SectionCard from "../components/SectionCard";
@@ -18,6 +19,13 @@ type Job = components["schemas"]["JobResponse"];
 type Resume = components["schemas"]["ResumeResponse"];
 type ScreeningResponse =
   components["schemas"]["ScreeningResponse"];
+
+interface RankedApplicant {
+  resume: Resume;
+  rank: number | null;
+  score: number | null;
+  eligible: boolean | null;
+}
 
 type ScreeningStatus =
   | "idle"
@@ -61,6 +69,17 @@ export default function ScreeningPage() {
 
   const [selectedJobId, setSelectedJobId] =
     useState("");
+
+  // Resumes that actually applied to the selected job, ordered the
+  // same way the recruiter application list is ranked (persisted
+  // rank, else score, else application order - see
+  // GET /api/jobs/{job_id}/applications). Empty/null before a job
+  // is selected or while that job's applicants are still loading.
+  const [applicantResumes, setApplicantResumes] =
+    useState<RankedApplicant[] | null>(null);
+
+  const [loadingApplicants, setLoadingApplicants] =
+    useState(false);
 
   const [selectedResumeIds, setSelectedResumeIds] =
     useState<string[]>([]);
@@ -112,6 +131,91 @@ export default function ScreeningPage() {
       });
   }, []);
 
+  useEffect(() => {
+    const token =
+      localStorage.getItem("access_token");
+
+    setSelectedResumeIds([]);
+
+    if (!selectedJobId || !token) {
+      setApplicantResumes(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    setLoadingApplicants(true);
+    setApplicantResumes(null);
+
+    listJobApplications(selectedJobId, token)
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+
+        const resumesById = new Map(
+          resumes.map((resume) => [
+            resume.resume_id,
+            resume,
+          ]),
+        );
+
+        // The applications list is already ranked server-side
+        // (persisted rank, else score, else application order) -
+        // preserve that order here rather than re-sorting.
+        const ranked: RankedApplicant[] = response.results
+          .map((application) => {
+            const resume = resumesById.get(
+              application.resume_id,
+            );
+
+            if (!resume) {
+              return null;
+            }
+
+            return {
+              resume,
+              rank: application.rank,
+              score: application.score,
+              eligible: application.eligible,
+            };
+          })
+          .filter(
+            (
+              item,
+            ): item is RankedApplicant =>
+              item !== null,
+          );
+
+        setApplicantResumes(ranked);
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+
+        console.error(
+          "Failed to load applicants for job:",
+          err,
+        );
+
+        setError(
+          "Failed to load candidates who applied to this job.",
+        );
+        setApplicantResumes([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingApplicants(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedJobId, resumes]);
+
   function toggleResume(
     resumeId: string,
   ) {
@@ -136,8 +240,8 @@ export default function ScreeningPage() {
     }
 
     setSelectedResumeIds(
-      resumes.map(
-        (resume) => resume.resume_id,
+      (applicantResumes ?? []).map(
+        (applicant) => applicant.resume.resume_id,
       ),
     );
   }
@@ -442,11 +546,18 @@ export default function ScreeningPage() {
           </SectionCard>
 
           <SectionCard title="2. Select Candidate Resumes">
-            {resumes.length === 0 ? (
+            {!selectedJobId ? (
               <p className="muted">
-                No resumes available.
-                Upload resumes before
-                starting screening.
+                Select a job above to see the candidates
+                who applied to it, ranked by AI match
+                score.
+              </p>
+            ) : loadingApplicants ? (
+              <LoadingState message="Loading applicants for this job..." />
+            ) : !applicantResumes || applicantResumes.length === 0 ? (
+              <p className="muted">
+                No candidates have applied to this job
+                yet.
               </p>
             ) : (
               <>
@@ -480,12 +591,14 @@ export default function ScreeningPage() {
                 <p className="muted text-sm">
                   Selected:{" "}
                   {selectedResumeIds.length}{" "}
-                  / {resumes.length}
+                  / {applicantResumes.length} applicants
                 </p>
 
                 <ul className="stack" style={{ gap: "0.5rem" }}>
-                  {resumes.map(
-                    (resume) => {
+                  {applicantResumes.map(
+                    (applicant, index) => {
+                      const { resume } = applicant;
+
                       const checked =
                         selectedResumeIds.includes(
                           resume.resume_id,
@@ -521,9 +634,24 @@ export default function ScreeningPage() {
 
                             <span style={{ flex: 1 }}>
                               <strong>
+                                #{applicant.rank ?? index + 1}{" "}
                                 {resume.name ??
                                   resume.resume_id}
                               </strong>
+
+                              {applicant.score !== null && (
+                                <span className="muted text-sm">
+                                  {" "}
+                                  · Match:{" "}
+                                  {(applicant.score * 100).toFixed(1)}%
+                                </span>
+                              )}
+
+                              {applicant.eligible !== null && (
+                                <EligibilityBadge
+                                  eligible={applicant.eligible}
+                                />
+                              )}
 
                               <p className="muted text-sm mt-0">
                                 {resume.resume_id}

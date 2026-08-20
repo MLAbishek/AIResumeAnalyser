@@ -1,3 +1,4 @@
+import concurrent.futures
 import logging
 from types import SimpleNamespace
 from typing import Any
@@ -154,9 +155,18 @@ class ScreeningService:
             for canonical_resume in canonical_resumes
         }
 
+        # Rank every candidate, not just the eligibility-gate
+        # survivors - eligibility (hard requirements) and ranking
+        # (relative strength) are different concerns. An ineligible
+        # candidate can still have a real, evidence-backed score;
+        # forcing their ranking to a hardcoded 0.0 (the old
+        # eligible_resumes-only behavior) silently contradicted their
+        # own matched_skills/experience/education evidence and made
+        # the reported score meaningless for anyone who failed even
+        # one hard gate.
         ranked_scores = rank_candidates(
             canonical_job,
-            eligible_resumes,
+            canonical_resumes,
         )
 
         ranked_by_id = {
@@ -165,6 +175,7 @@ class ScreeningService:
         }
 
         results = []
+        llm_contexts: list[dict[str, Any] | None] = []
 
         for resume in resumes:
             eligibility = eligibility_results[
@@ -175,7 +186,7 @@ class ScreeningService:
                 resume.resume_id
             )
 
-            result = self._build_candidate_result(
+            result, llm_context = self._build_candidate_result(
                 job_description=job_description,
                 resume=resume,
                 canonical_job=canonical_job,
@@ -187,6 +198,14 @@ class ScreeningService:
             )
 
             results.append(result)
+            llm_contexts.append(llm_context)
+
+        # Every candidate already has a complete, correct result with
+        # a deterministic narrative fallback at this point - fetching
+        # LLM narratives is a best-effort enhancement layered on top,
+        # run concurrently and time-boxed so N selected candidates
+        # never turns into N sequential 15-45s network calls.
+        self._attach_narratives(results, llm_contexts)
 
         results.sort(
             key=lambda result: (
@@ -405,7 +424,16 @@ class ScreeningService:
             required_certifications=(
                 job_description.certifications
             ),
-            location=job_description.location,
+            # candidate.location above is always None - neither
+            # Resume nor CanonicalResume has a location field
+            # anywhere in this codebase, so there is no signal to
+            # compare a job's location against. Passing the job's
+            # location through here would make check_location()
+            # reject every candidate for any job with a location
+            # set (unavailable candidate location + a real
+            # requirement = ineligible), which is a guaranteed
+            # false rejection, not a real location mismatch.
+            location=None,
             work_authorization_required=False,
         )
 
@@ -428,9 +456,11 @@ class ScreeningService:
         canonical_resume: CanonicalResume,
         eligibility: dict[str, Any],
         ranking: CandidateScore | None,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """
-        Build the complete candidate-level screening result.
+        Build the complete candidate-level screening result, plus the
+        LLM narrative context for that candidate (None if LLM
+        explanations are disabled/unconfigured).
         """
 
         ranking_score = None
@@ -438,10 +468,19 @@ class ScreeningService:
         if ranking is not None:
             ranking_score = ranking.score
 
-        ranking_score_100 = (
+        # Rounded once, here, and reused by every downstream consumer
+        # (threshold decision, explanation, evidence, LLM context,
+        # the final result dict) - this is the one canonical
+        # percentage value. Rounding separately at each consumption
+        # site (as before) let unrounded float noise (e.g.
+        # 73.42999999999999) leak into evidence citations while the
+        # API-facing field showed the rounded 73.43, a spurious
+        # mismatch between two presentations of the same score.
+        ranking_score_100 = round(
             ranking_score * 100
             if ranking_score is not None
-            else 0.0
+            else 0.0,
+            2,
         )
 
         threshold = self.threshold_policy.evaluate(
@@ -469,18 +508,16 @@ class ScreeningService:
         # soft-signal JD line ("Familiarity with TypeScript") is
         # reclassified out of the hard eligibility gate but a
         # candidate who has it should still show it as a genuine
-        # strength here, not as neither matched nor missing.
-        gap_analysis_skills = list(
-            dict.fromkeys(
-                [
-                    *canonical_job.required_skills,
-                    *canonical_job.preferred_skills,
-                ]
-            )
-        )
-
+        # strength here, not as neither matched nor missing. They are
+        # kept as two SEPARATE lists (not merged) so GapAnalysisEngine
+        # can classify a missing entry's severity - missing a
+        # required skill is a critical gap, missing a preferred one
+        # is nice-to-have, and conflating them would make every
+        # missing optional technology look as serious as a genuine
+        # requirement failure.
         matching_jd = {
-            "required_skills": gap_analysis_skills,
+            "required_skills": canonical_job.required_skills,
+            "preferred_skills": canonical_job.preferred_skills,
             "minimum_experience_years": (
                 canonical_job.experience.minimum_months / 12
                 if canonical_job.experience.minimum_months
@@ -550,9 +587,15 @@ class ScreeningService:
                 ["eligible"]
             ),
             "ranking_score": ranking_score_100,
+            # NOTE: no trailing comma here - a stray trailing comma
+            # previously wrapped this concatenated list in a 1-tuple,
+            # which ExplainabilityEngine then stringified whole
+            # (producing a single garbled "['reason one', 'reason
+            # two', ...]" entry in the narrative's reasons instead of
+            # the individual reason strings).
             "reasons": (
                 eligibility["result"]["reasons"]
-                + [threshold["reason"]],
+                + [threshold["reason"]]
             ),
         }
 
@@ -570,8 +613,22 @@ class ScreeningService:
             },
         )
 
-        explanation = self._add_llm_narrative(
-            explanation=explanation,
+        # A deterministic narrative is always present up front - the
+        # LLM narrative (if any) is layered on afterwards by
+        # _attach_narratives, so this result is already complete and
+        # valid on its own.
+        explanation = {
+            **explanation,
+            "narrative": explanation["summary"],
+            "narrative_source": "deterministic",
+        }
+
+        # Building the context is pure/local (no network call) -
+        # whether to actually call out to the LLM is entirely
+        # llm_service's own decision (it no-ops instantly if
+        # disabled/unconfigured), so ScreeningService always builds
+        # it and always offers it to _attach_narratives.
+        llm_context = self._build_llm_context(
             job_description=job_description,
             resume=resume,
             eligibility=eligibility,
@@ -602,12 +659,11 @@ class ScreeningService:
                 if ranking is not None
                 else None
             ),
-        }
+        }, llm_context
 
-    def _add_llm_narrative(
+    def _build_llm_context(
         self,
         *,
-        explanation: dict[str, Any],
         job_description: JobDescription,
         resume: Resume,
         eligibility: dict[str, Any],
@@ -619,20 +675,13 @@ class ScreeningService:
         evidence: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """
-        Attach an LLM-generated natural-language narrative to the
-        existing deterministic explanation dict, additively.
-
-        The deterministic keys (decision/summary/reasons/strengths/
-        gaps) produced by ExplainabilityEngine are never modified -
-        this only adds a "narrative" field grounded in the already-
-        computed evaluation, decision, gap analysis, and evidence.
-        If the LLM is disabled, unconfigured, or fails for any
-        reason, the deterministic summary is used as the narrative
-        instead so the screening result and API response are always
-        complete.
+        Build the grounded context an LLM narrative for this
+        candidate would be generated from. Pure/local - makes no
+        network call, so building it for every candidate up front is
+        cheap regardless of how many candidates are being screened.
         """
 
-        context = {
+        return {
             "job": {
                 "title": job_description.title,
                 "required_skills": (
@@ -698,32 +747,86 @@ class ScreeningService:
             ],
         }
 
-        # LLMExplanationService itself never raises, but screening
-        # must remain functional even if a differently-implemented
-        # llm_service (e.g. injected via dependency override) does -
-        # explanation generation is an enhancement layer and must
-        # never be able to fail the screening pipeline.
-        try:
-            narrative = self.llm_service.generate_explanation(
-                context
-            )
-        except Exception:
-            logger.warning(
-                "LLM explanation raised unexpectedly; "
-                "falling back to the deterministic summary.",
-                exc_info=False,
-            )
-            narrative = None
+    def _attach_narratives(
+        self,
+        results: list[dict[str, Any]],
+        llm_contexts: list[dict[str, Any] | None],
+    ) -> None:
+        """
+        Fetch LLM narratives for every candidate concurrently and
+        attach them in place, replacing each result's deterministic
+        narrative fallback where the LLM produced one in time.
 
-        if narrative:
-            return {
-                **explanation,
-                "narrative": narrative,
-                "narrative_source": "llm",
+        Runs all candidates' requests in parallel instead of
+        sequentially, and never waits for stragglers past a fixed
+        cap - a slow/hanging call for one candidate can never stall
+        the whole screening request, and every candidate already has
+        a complete, valid result (with the deterministic narrative)
+        regardless of what happens here.
+        """
+
+        runnable = [
+            (index, context)
+            for index, context in enumerate(llm_contexts)
+            if context is not None
+        ]
+
+        if not runnable:
+            return
+
+        max_workers = min(len(runnable), 5)
+        executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_workers
+        )
+
+        try:
+            future_to_index = {
+                executor.submit(
+                    self.llm_service.generate_explanation,
+                    context,
+                ): index
+                for index, context in runnable
             }
 
-        return {
-            **explanation,
-            "narrative": explanation["summary"],
-            "narrative_source": "deterministic",
-        }
+            # getattr with a fallback: llm_service is a caller-
+            # injectable dependency (e.g. a test mock), not
+            # guaranteed to expose timeout_seconds.
+            wait_timeout = (
+                getattr(
+                    self.llm_service,
+                    "timeout_seconds",
+                    15.0,
+                )
+                + 10
+            )
+
+            done, _ = concurrent.futures.wait(
+                future_to_index,
+                timeout=wait_timeout,
+            )
+
+            for future in done:
+                index = future_to_index[future]
+
+                try:
+                    narrative = future.result()
+                except Exception:
+                    logger.warning(
+                        "LLM explanation raised unexpectedly; "
+                        "keeping the deterministic narrative.",
+                        exc_info=False,
+                    )
+                    narrative = None
+
+                if narrative:
+                    results[index]["explanation"] = {
+                        **results[index]["explanation"],
+                        "narrative": narrative,
+                        "narrative_source": "llm",
+                    }
+        finally:
+            # wait=False: any request still in flight past the cap
+            # above is abandoned from the caller's perspective (its
+            # result is simply never used) rather than blocking this
+            # request further.
+            executor.shutdown(wait=False)

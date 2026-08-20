@@ -1,8 +1,13 @@
 from typing import Any
 
+from app.normalization.education_normalizer import (
+    EducationNormalizer,
+)
 from app.normalization.normalizer_utils import (
     split_requirement_group,
 )
+
+_education_normalizer = EducationNormalizer()
 
 
 class GapAnalysisEngine:
@@ -28,9 +33,31 @@ class GapAnalysisEngine:
             resume.get("skills", [])
         )
 
-        matched_skills, missing_skills = self._calculate_skill_gap(
+        # Required and preferred requirements carry different
+        # severity: a candidate missing a REQUIRED skill has a
+        # critical gap, while missing a PREFERRED ("nice to have")
+        # skill is a minor gap that must never be portrayed with the
+        # same weight. jd["preferred_skills"] is optional - callers
+        # that only pass "required_skills" (including every existing
+        # caller/test of this method) get identical behavior to
+        # before, just with critical_missing_skills/
+        # nice_to_have_missing_skills additionally exposed.
+        matched_required, missing_required = self._calculate_skill_gap(
             jd.get("required_skills", []),
             candidate_skills,
+        )
+
+        matched_preferred, missing_preferred = self._calculate_skill_gap(
+            jd.get("preferred_skills", []),
+            candidate_skills,
+        )
+
+        matched_skills = sorted(
+            set(matched_required) | set(matched_preferred)
+        )
+
+        missing_skills = sorted(
+            set(missing_required) | set(missing_preferred)
         )
 
         experience_gap = self._calculate_experience_gap(
@@ -52,11 +79,22 @@ class GapAnalysisEngine:
             "matched_skills": matched_skills,
             "missing_skills": missing_skills,
             "skill_gap_count": len(missing_skills),
+            # Severity breakdown of missing_skills: a missing
+            # required skill is a critical gap; a missing preferred
+            # skill is nice-to-have and must not be weighted the same
+            # in any downstream narrative/UI.
+            "critical_missing_skills": sorted(missing_required),
+            "nice_to_have_missing_skills": sorted(missing_preferred),
             "experience_gap": experience_gap,
             "education_gap": education_gap,
             "certification_gap": certification_gap,
+            # Only critical (required-skill) gaps and hard-requirement
+            # gaps (experience/education/certification) mark this
+            # evaluation as having a gap - a candidate missing only
+            # optional/preferred skills is not "gapped" in any
+            # meaningful sense.
             "has_gap": bool(
-                missing_skills
+                missing_required
                 or experience_gap["has_gap"]
                 or education_gap["has_gap"]
                 or certification_gap["has_gap"]
@@ -173,6 +211,14 @@ class GapAnalysisEngine:
         jd: dict[str, Any],
         resume: dict[str, Any],
     ) -> dict[str, Any]:
+        """
+        Uses the same EducationNormalizer as eligibility
+        (check_education_certification) and ranking (score_education)
+        so this gap can never disagree with what those already
+        decided - e.g. a candidate degree phrased as "AI & ML" must
+        be recognized here exactly like it is everywhere else, not
+        flagged as a gap by a stricter literal-string comparison.
+        """
 
         required = cls._normalize_set(
             jd.get("required_education", [])
@@ -191,8 +237,23 @@ class GapAnalysisEngine:
                 "meets_requirement": True,
             }
 
-        matched = required & candidate
-        missing = required - candidate
+        matched: set[str] = set()
+        missing: set[str] = set()
+
+        for requirement in required:
+            satisfied = any(
+                _education_normalizer.requirement_satisfied(
+                    requirement_degree=requirement,
+                    requirement_field=None,
+                    candidate_degree=candidate_entry,
+                )
+                for candidate_entry in candidate
+            )
+
+            if satisfied:
+                matched.add(requirement)
+            else:
+                missing.add(requirement)
 
         return {
             "required": sorted(required),

@@ -90,6 +90,13 @@ class EducationNormalizer:
         "information technology": "information technology",
         "artificial intelligence": "artificial intelligence",
         "machine learning": "machine learning",
+        # Bare "AI"/"ML" abbreviations - extremely common in JDs
+        # ("AI/ML", "AI & ML") and candidate degree titles. Safe to
+        # match as standalone tokens: find_known_terms only matches
+        # on word boundaries, so these never match mid-word (e.g.
+        # "domain", "html").
+        "ai": "artificial intelligence",
+        "ml": "machine learning",
         "data science": "data science",
         "software engineering": "software engineering",
         "computer engineering": "computer engineering",

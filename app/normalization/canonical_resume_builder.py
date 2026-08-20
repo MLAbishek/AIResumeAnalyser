@@ -95,9 +95,8 @@ class CanonicalResumeBuilder:
             parsed_resume.get("education", [])
         )
 
-        total_experience_months = sum(
-            experience.duration_months
-            for experience in experiences
+        total_experience_months = (
+            self._merge_experience_months(experiences)
         )
 
         return CanonicalResume(
@@ -114,6 +113,54 @@ class CanonicalResumeBuilder:
             education=education,
             total_experience_months=total_experience_months,
         )
+
+    @staticmethod
+    def _merge_experience_months(
+        experiences: list[CanonicalExperience],
+    ) -> int:
+        """
+        Total experience as the union of covered calendar months,
+        not the naive sum of each entry's duration - two roles held
+        concurrently (e.g. overlapping internships, or a part-time
+        role during a full-time one) must not double-count the
+        overlapping months. A candidate's real total experience can
+        never exceed the actual calendar time that elapsed.
+
+        Each entry's [start_date, end_date) is treated as a
+        half-open month range - the same convention
+        DateDurationNormalizer.calculate_duration_months already
+        uses - so a single non-overlapping entry's contribution here
+        is identical to its own duration_months.
+        """
+
+        if not experiences:
+            return 0
+
+        intervals = sorted(
+            (
+                min(start, end),
+                max(start, end),
+            )
+            for start, end in (
+                (
+                    experience.start_date.year * 12
+                    + experience.start_date.month,
+                    experience.end_date.year * 12
+                    + experience.end_date.month,
+                )
+                for experience in experiences
+            )
+        )
+
+        merged: list[list[int]] = []
+
+        for start, end in intervals:
+            if merged and start <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+
+        return sum(end - start for start, end in merged)
 
     def _build_experiences(
         self,

@@ -165,19 +165,56 @@ class ExplainabilityEngine:
     ) -> list[str]:
         gaps: list[str] = []
 
-        missing_skills = self._as_list(
-            features.get("missing_skills", [])
-        )
-
-        if missing_skills:
-            gaps.append(
-                "Missing required skills: "
-                + ", ".join(
-                    str(skill)
-                    for skill in missing_skills
-                )
-                + "."
+        # Prefer the severity-classified lists when available (see
+        # GapAnalysisEngine) so a missing preferred/nice-to-have
+        # skill is never worded as if it were a required-skill
+        # failure. Falls back to the flat "missing_skills" list for
+        # any caller that hasn't classified severity.
+        if (
+            "critical_missing_skills" in features
+            or "nice_to_have_missing_skills" in features
+        ):
+            critical_missing = self._as_list(
+                features.get("critical_missing_skills", [])
             )
+
+            nice_to_have_missing = self._as_list(
+                features.get("nice_to_have_missing_skills", [])
+            )
+
+            if critical_missing:
+                gaps.append(
+                    "Missing required skills: "
+                    + ", ".join(
+                        str(skill)
+                        for skill in critical_missing
+                    )
+                    + "."
+                )
+
+            if nice_to_have_missing:
+                gaps.append(
+                    "Missing preferred (nice-to-have) skills: "
+                    + ", ".join(
+                        str(skill)
+                        for skill in nice_to_have_missing
+                    )
+                    + "."
+                )
+        else:
+            missing_skills = self._as_list(
+                features.get("missing_skills", [])
+            )
+
+            if missing_skills:
+                gaps.append(
+                    "Missing required skills: "
+                    + ", ".join(
+                        str(skill)
+                        for skill in missing_skills
+                    )
+                    + "."
+                )
 
         experience_gap = features.get(
             "experience_gap"

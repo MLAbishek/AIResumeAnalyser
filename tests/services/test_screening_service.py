@@ -92,8 +92,14 @@ def test_screening_service_rejects_missing_required_skill():
 
     candidate = result["results"][0]
 
+    # Eligibility (hard gate) and ranking (relative strength) are
+    # separate concerns: this candidate is ineligible for missing a
+    # required skill, but still has real, evidence-backed partial
+    # overlap (Python) that must be reflected in a non-null score -
+    # not silently zeroed out just because they failed the gate.
     assert candidate["eligible"] is False
-    assert candidate["ranking_score"] is None
+    assert candidate["ranking_score"] is not None
+    assert candidate["ranking_score"] > 0.0
     assert candidate["decision"] == "reject"
 
 

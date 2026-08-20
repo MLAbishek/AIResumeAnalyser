@@ -13,6 +13,20 @@ from app.normalization.normalizer_utils import (
     split_requirement_group,
 )
 
+# JDs commonly list required skills as either (a) a short, curated
+# set of true must-haves ("Java", "SQL") or (b) a long, auto-extracted
+# tech-stack inventory ("Python, Java, Flask, MySQL, AWS, Git, ...").
+# A short list all-or-nothing gate is correct: those are genuinely
+# selected must-haves. Applying the same all-or-nothing gate to a
+# long inventory effectively demands the candidate know *everything*
+# on the stack, which no real candidate (including strong ones) ever
+# fully satisfies - that's a parsing/authoring artifact, not a real
+# hard requirement, and must not hard-block eligibility. Above the
+# threshold, skill coverage remains fully visible (matched/missing
+# lists, reasons) for ranking and gap analysis - it simply stops
+# gating eligibility on its own.
+LARGE_SKILL_LIST_THRESHOLD = 8
+
 
 def check_skills(
     candidate_skills,
@@ -55,10 +69,21 @@ def check_skills(
                 else alternatives[0]
             )
 
-    eligible = len(missing) == 0
+    is_large_inventory = (
+        len(criteria.required_skills) > LARGE_SKILL_LIST_THRESHOLD
+    )
 
-    if eligible:
+    eligible = len(missing) == 0 or is_large_inventory
+
+    if len(missing) == 0:
         reasons.append("All skills satisfied")
+    elif is_large_inventory:
+        reasons.append(
+            f"{len(matching)}/{len(criteria.required_skills)} "
+            f"listed skills matched (large skill inventory - not "
+            f"treated as a hard requirement); missing: "
+            f"{', '.join(missing)}"
+        )
     else:
         reasons.append(
             f"Missing required skills: {', '.join(missing)}"

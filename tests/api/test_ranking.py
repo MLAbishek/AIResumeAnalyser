@@ -174,10 +174,18 @@ def test_ranking_endpoint_does_not_duplicate_results(
     assert screening_1_rankings[0].id == first_id
 
 
-def test_ranking_endpoint_returns_empty_for_no_eligible_candidates(
+def test_ranking_endpoint_includes_ineligible_candidates(
     client,
     db,
 ):
+    """
+    Eligibility (hard gate) and ranking (relative strength) are
+    separate concerns - an ineligible candidate can still have a
+    real, evidence-backed score, and this endpoint must surface it
+    the same way ScreeningService.screen() does, rather than
+    silently dropping the candidate from the ranking table.
+    """
+
     job = create_job(
         db,
         job_id="JOB-API-RANK-EMPTY",
@@ -212,5 +220,5 @@ def test_ranking_endpoint_returns_empty_for_no_eligible_candidates(
     data = response.json()
 
     assert data["job_id"] == job.job_id
-    assert data["count"] == 0
-    assert data["results"] == []
+    assert data["count"] == 1
+    assert len(data["results"]) == 1

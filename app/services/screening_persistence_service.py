@@ -15,6 +15,7 @@ from app.database.crud.ranking_results import (
 from app.database.crud.resumes import get_resume_by_id
 from app.database.crud.screening_results import (
     create_screening_result,
+    get_screening_result,
 )
 
 
@@ -61,6 +62,16 @@ class ScreeningPersistenceService:
                     raise ValueError(
                         f"Resume '{resume_id}' not found."
                     )
+
+                existing = get_screening_result(
+                    self.db,
+                    job_id=job.id,
+                    resume_id=resume.id,
+                )
+
+                if existing is not None:
+                    self.db.delete(existing)
+                    self.db.flush()
 
                 screening = create_screening_result(
                     self.db,

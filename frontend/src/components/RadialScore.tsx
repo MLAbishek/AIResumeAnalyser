@@ -13,7 +13,8 @@ function scoreLabel(value: number): string {
   if (value >= 85) return "Excellent Match";
   if (value >= 70) return "Strong Match";
   if (value >= 50) return "Moderate Match";
-  return "Weak Match";
+  if (value >= 30) return "Weak Match";
+  return "Very Weak Match";
 }
 
 /**

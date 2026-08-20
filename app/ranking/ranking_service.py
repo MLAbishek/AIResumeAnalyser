@@ -21,7 +21,9 @@ def rank_job_candidates(
     job_id: str,
 ):
     """
-    Rank all eligible candidates for a job.
+    Rank all screened candidates for a job (regardless of
+    eligibility - see the note below on why ineligible candidates
+    are not excluded).
 
     Database transaction is owned by this service.
     """
@@ -37,11 +39,18 @@ def rank_job_candidates(
             f"Job '{job_id}' not found."
         )
 
+    # Rank every screened candidate for this job, not only the ones
+    # that passed the eligibility hard-gate - eligibility and ranking
+    # are different concerns (see ScreeningService.screen()), and an
+    # ineligible candidate can still have a real, evidence-backed
+    # score. Filtering them out here would silently drop them from
+    # this endpoint while screen() itself reports a real score for
+    # them, which is exactly the cross-endpoint inconsistency this
+    # fix eliminates.
     screenings = db.scalars(
         select(ScreeningResult)
         .where(
             ScreeningResult.job_id == job.id,
-            ScreeningResult.eligible.is_(True),
         )
         .options(
             selectinload(ScreeningResult.resume)

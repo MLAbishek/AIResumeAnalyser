@@ -102,8 +102,21 @@ class EvidenceCitationEngine:
             resume.get("skills", [])
         )
 
-        required_skills = self._normalize_list(
-            jd.get("required_skills", [])
+        # Cite evidence for both required and preferred skill
+        # matches - a candidate who has a preferred/nice-to-have
+        # skill is a genuine strength and must be cited exactly like
+        # a required-skill match, not silently omitted.
+        required_skills = list(
+            dict.fromkeys(
+                [
+                    *self._normalize_list(
+                        jd.get("required_skills", [])
+                    ),
+                    *self._normalize_list(
+                        jd.get("preferred_skills", [])
+                    ),
+                ]
+            )
         )
 
         resume_lookup = {
